@@ -1,0 +1,10 @@
+pypdf
+sentence-transformers
+chromadb
+streamlit
+scikit-learn
+matplotlib
+numpy
+pandas
+tiktoken
+openai
