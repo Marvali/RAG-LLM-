@@ -50,30 +50,36 @@ Models used:
 
 ---
 
-# Project Structure
+# RAG-LLM Project
 
+## Project Structure
 
+```
 RAG-LLM/
-│
 ├── data/
-│ └── fia_2026_formula_1_technical_regulations_issue_8_-_2024-06-24.pdf
+│   └── fia_2026_formula_1_technical_regulations_issue_8_-_2024-06-24.pdf
 │
 ├── output/
-│ ├── chunks.csv
-│ ├── embeddings.npy
-│ ├── faiss_index.bin
-│ └── faiss_metadata.json
+│   ├── chunks.csv
+│   ├── embeddings.npy
+│   ├── faiss_index.bin
+│   └── faiss_metadata.json
 │
 ├── src/
-│ ├── embeddings_stats.py
-│ ├── build_faiss_index.py
-│ ├── search_faiss.py
-│ └── ask_local_llm.py
+│   ├── embeddings_stats.py
+│   ├── build_faiss_index.py
+│   ├── search_faiss.py
+│   └── ask_local_llm.py
 │
 └── README.md
+```
 
+## Description
 
----
+- **data/** → Contains the source PDF document.
+- **output/** → Generated data from the pipeline (chunks, embeddings, FAISS index).
+- **src/** → Python scripts implementing the RAG pipeline.
+- **README.md** → Project documentation.
 
 # Installation
 
