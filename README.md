@@ -1,58 +1,41 @@
 # RAG System for Formula 1 Technical Regulations (2026)
 
-This project implements a **Retrieval-Augmented Generation (RAG)** pipeline that allows querying the **2026 Formula 1 Technical Regulations** using a local LLM.
+A Retrieval-Augmented Generation (RAG) pipeline that enables semantic search and question answering over the 2026 Formula 1 Technical Regulations using a local LLM.
 
-The system processes a PDF document, converts it into vector embeddings, indexes them using FAISS, and retrieves relevant fragments to answer user questions.
+## Overview
 
-The language model runs locally through **LM Studio**, enabling offline semantic search and question answering.
+This project implements an intelligent document retrieval system that:
+- **Processes** the official FIA F1 2026 Technical Regulations PDF
+- **Converts** text into vector embeddings using transformer models
+- **Indexes** embeddings with FAISS for fast semantic search
+- **Retrieves** relevant document fragments based on user queries
+- **Generates** accurate answers using a locally-running language model
 
----
+Instead of relying solely on the LLM's pretraining knowledge, the system grounds responses in the actual regulation document content.
 
-# Project Overview
+### Pipeline Flow
 
-The pipeline works as follows:
-
-
-PDF
-↓
-Text extraction
-↓
-Chunking (document split into fragments)
-↓
-Embedding generation
-↓
-Vector index (FAISS)
-↓
-Semantic search
-↓
-Context sent to local LLM
-↓
-Generated answer
-
-
-This approach allows the model to answer questions based on the **actual content of the document**, instead of relying only on its pretraining knowledge.
-
----
-
-# Technologies Used
-
-- Python
-- FAISS (vector similarity search)
-- Sentence Transformers
-- LM Studio (local LLM inference)
-- NumPy / Pandas
-- PyPDF
-
-Models used:
-
-- Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
-- LLM: `Qwen` running locally via LM Studio
+```
+PDF Document
+    ↓
+Text Extraction & Chunking
+    ↓
+Embedding Generation
+    ↓
+FAISS Vector Index
+    ↓
+Semantic Search (User Query)
+    ↓
+Context Retrieval
+    ↓
+Local LLM (Qwen via LM Studio)
+    ↓
+Generated Answer
+```
 
 ---
 
-# RAG-LLM Project
-
-## Project Structure
+## 📋 Project Structure
 
 ```
 RAG-LLM/
@@ -74,151 +57,185 @@ RAG-LLM/
 └── README.md
 ```
 
-## Description
+### Directory Description
 
-- **data/** → Contains the source PDF document.
-- **output/** → Generated data from the pipeline (chunks, embeddings, FAISS index).
-- **src/** → Python scripts implementing the RAG pipeline.
-- **README.md** → Project documentation.
+| Directory | Purpose |
+|-----------|---------|
+| **data/** | Source PDF document (FIA F1 2026 Technical Regulations) |
+| **output/** | Generated artifacts (chunks, embeddings, FAISS index, metadata) |
+| **src/** | Python scripts implementing the RAG pipeline |
 
-# Installation
+---
 
-Clone the repository:
+## 🛠️ Technologies & Models
 
+### Core Libraries
+- **Python** - Programming language
+- **FAISS** - Vector similarity search and indexing
+- **Sentence Transformers** - Text-to-embedding conversion
+- **PyPDF** - PDF text extraction
+- **NumPy / Pandas** - Data processing
+- **LM Studio** - Local LLM inference engine
 
+### Models
+
+| Component | Model | Purpose |
+|-----------|-------|---------|
+| **Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Convert text chunks to vectors |
+| **LLM** | `Qwen` (via LM Studio) | Generate natural language responses |
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+- Python 3.8+
+- LM Studio (download from [lmstudio.ai](https://lmstudio.ai))
+
+### Step 1: Clone Repository
+
+```bash
 git clone https://github.com/yourusername/RAG-LLM.git
-
 cd RAG-LLM
+```
 
+### Step 2: Install Python Dependencies
 
-Install dependencies:
-
-
+```bash
 pip install sentence-transformers faiss-cpu numpy pandas pypdf openai torch tqdm
+```
 
+### Step 3: Set Up Local LLM
+
+1. Download and install [LM Studio](https://lmstudio.ai)
+2. Download the `Qwen` model (or your preferred model)
+3. Start the LM Studio server on `localhost:1234`
 
 ---
 
-# Step 1: Vectorize the PDF
+## 🚀 Usage
 
-This script:
+### Step 1: Vectorize the PDF
 
-- extracts text from the PDF
-- splits the document into chunks
-- generates embeddings
+Extract text from the PDF, split into chunks, and generate embeddings:
 
-
+```bash
 python src/embeddings_stats.py
+```
 
+**Output files:**
+- `output/chunks.csv` - Document chunks and metadata
+- `output/embeddings.npy` - Vector embeddings
 
-Generated files:
+### Step 2: Build FAISS Index
 
+Create a searchable vector index:
 
-output/chunks.csv
-output/embeddings.npy
-
-
----
-
-# Step 2: Build the FAISS Index
-
-Create a vector search index:
-
-
+```bash
 python src/build_faiss_index.py
+```
 
+**Output files:**
+- `output/faiss_index.bin` - FAISS index file
+- `output/faiss_metadata.json` - Chunk metadata
 
-Generated files:
+### Step 3: Semantic Search (Optional)
 
+Perform pure semantic search on the document:
 
-output/faiss_index.bin
-output/faiss_metadata.json
-
-
----
-
-# Step 3: Search the Document
-
-Perform semantic search on the regulation document:
-
-
+```bash
 python src/search_faiss.py
+```
 
-
-Example query:
-
-
+**Example query:**
+```
 What are the 2026 power unit rules?
+```
 
+The system returns the most relevant text fragments from the regulations.
 
-The system returns the most relevant fragments from the document.
+### Step 4: Ask Questions with LLM
 
----
+Generate complete answers by combining retrieval with LLM inference:
 
-# Step 4: Ask the Local LLM
+```bash
+python src/ask_local_llm.py "Your question here"
+```
 
-To generate full answers using retrieved fragments, run:
-
-
-python src/ask_local_llm.py
-
-
-Example:
-
-
+**Example:**
+```bash
 python src/ask_local_llm.py "How many power units does a team have?"
+```
 
-
-The system will:
-
-1. retrieve relevant chunks
-2. send them as context to the LLM
-3. generate a natural language answer
-
----
-
-# Example Query
-
-
-Question:
-How many power units does a team have?
-
-Answer:
-The regulation does not provide a fixed number directly. It defines the minimum number of power units per team as the number allowed per driver per season under the Sporting Regulations multiplied by two, plus additional units required to complete 5000 km of testing.
-
+**Output:**
+```
+The regulation does not provide a fixed number directly. It defines the minimum 
+number of power units per team as the number allowed per driver per season under 
+the Sporting Regulations multiplied by two, plus additional units required to 
+complete 5000 km of testing.
+```
 
 ---
 
-# Dataset
+## 📚 Example Queries
 
-The document used in this project is the official:
-
-**FIA Formula 1 Technical Regulations (2026)**.
-
----
-
-# Key Concepts Implemented
-
-- Document chunking
-- Text embeddings
-- Vector similarity search
-- Retrieval-Augmented Generation (RAG)
-- Local LLM inference
+| Question | Type |
+|----------|------|
+| How many power units does a team have? | Factual |
+| What are the aerodynamic restrictions? | Technical |
+| Explain the new 2026 hybrid power unit regulations | Explanation |
+| What is the minimum weight of the car? | Specification |
 
 ---
 
-# Future Improvements
+## 🔑 Key Concepts
 
-Possible improvements include:
-
-- smarter chunking based on document sections
-- better query preprocessing
-- UI interface for easier interaction
-- multi-document support
-- vector database integration (ChromaDB, Weaviate, etc.)
+- **Document Chunking** - Breaking the PDF into manageable text fragments
+- **Text Embeddings** - Converting text to high-dimensional vectors capturing semantic meaning
+- **Vector Similarity Search** - Finding chunks most relevant to a query
+- **Retrieval-Augmented Generation (RAG)** - Combining retrieval with LLM generation for accurate, grounded responses
+- **Local LLM Inference** - Running the language model on-device for privacy and offline capability
 
 ---
 
-# Author
+## 📊 Dataset
 
-Isaac
+**Source:** Official FIA Formula 1 Technical Regulations (2026)
+- Document: `fia_2026_formula_1_technical_regulations_issue_8_-_2024-06-24.pdf`
+- Version: Issue 8
+- Date: June 24, 2024
+
+---
+
+## 🔮 Future Improvements
+
+- [ ] Smarter chunking based on document section hierarchy
+- [ ] Query preprocessing and expansion
+- [ ] Web UI for easier interaction
+- [ ] Multi-document support (rules, sporting regulations, etc.)
+- [ ] Vector database integration (ChromaDB, Weaviate, Pinecone)
+- [ ] Conversation history and context management
+- [ ] Custom fine-tuning on F1 domain
+- [ ] Performance benchmarking and optimization
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## 👤 Author
+
+**Isaac**
+
+---
+
+## 📞 Support
+
+For issues, questions, or contributions, please open an issue on GitHub.
+
+---
+
+**Last Updated:** March 2026
