@@ -1,0 +1,19 @@
+juntar la carpeta de outputs con ouput y crear subcarpetas dentro para los chinls copsas del pdf y cosas de estadisticas
+añadir mas PDF al proyecto
+
+
+
+IDEAS A MEJORAR
+qué chunking funciona mejor y por qué, si hay como algunos que son por comas o por puntos, o por párrafos, o por frases, o por palabras, o por caracteres, o por tokens, o por embeddings, o por vectores, o por algo más raro como por temas o por entidades nombradas,
+
+cómo reranquear resultados, si el rag da 3 resultados, cómo elegir el mejor, o si se pueden combinar los resultados de alguna forma, o si se pueden usar técnicas de ensemble para mejorar la precisión,
+
+cómo evaluar precisión del retrieval, 
+
+cómo evitar meter contexto irrelevante,
+
+cuándo falla por ambigüedad,
+
+cómo citar fuentes,
+
+crear un juez para evaluar la calidad de las respuestas, o para comparar diferentes modelos o técnicas, o para detectar sesgos o errores en las respuestas, o para medir la coherencia o la fluidez de las respuestas, o para evaluar la creatividad o la originalidad de las respuestas, o para medir la utilidad o la relevancia de las respuestas, o para evaluar la diversidad o la cobertura de las respuestas, o para medir la satisfacción del usuario con las respuestas.

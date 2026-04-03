@@ -5,6 +5,11 @@ from pypdf import PdfReader
 
 
 def read_pdf(path: Path) -> str:
+    """
+    Leer PDF -> pasarlo a texto.
+    Args:        path (Path): The path to the PDF file.
+    Returns:        str: The extracted text from the PDF.
+    """
     text = []
     reader = PdfReader(str(path))
     for page in reader.pages:
@@ -15,10 +20,20 @@ def read_pdf(path: Path) -> str:
 
 
 def read_txt(path: Path) -> str:
+    """
+    leer TXT -> pasarlo a texto.
+    Args:        path (Path): The path to the text file.
+    Returns:        str: The content of the text file.
+    """
+
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def load_documents(data_dir: str = "../data") -> list:
+    """Cargar documentos desde un directorio específico.
+    Args:        data_dir (str): The directory containing the documents to load.
+    Returns:        list: A list of dictionaries, each containing the source and text of a document.
+    """
     data_path = Path(data_dir)
     documents = []
 
