@@ -8,3 +8,11 @@ numpy
 pandas
 tiktoken
 openai
+faiss-cpu
+torch
+tqdm
+
+# Backend FastAPI para la UI
+fastapi
+uvicorn[standard]
+python-multipart
