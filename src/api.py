@@ -425,9 +425,19 @@ def api_ask(req: AskRequest):
 
     # Historial de conversación previo (solo turnos completos)
     if req.use_history and req.history:
-        for m in req.history[-12:]:  # últimas 6 parejas
-            if m.role in ("user", "assistant") and m.content.strip():
-                messages.append({"role": m.role, "content": m.content})
+        hist_msgs = [
+            m for m in req.history[-12:]
+            if m.role in ("user", "assistant") and m.content.strip()
+        ]
+        # El historial debe empezar siempre con un mensaje 'user'
+        # (el mensaje de bienvenida del asistente rompe el template Jinja de LM Studio)
+        while hist_msgs and hist_msgs[0].role == "assistant":
+            hist_msgs.pop(0)
+        # Y debe terminar con 'assistant' para no generar dos 'user' consecutivos
+        while hist_msgs and hist_msgs[-1].role == "user":
+            hist_msgs.pop()
+        for m in hist_msgs:
+            messages.append({"role": m.role, "content": m.content})
 
     user_prompt = (
         f"Pregunta:\n{req.question}\n\n"
