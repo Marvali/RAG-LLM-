@@ -30,7 +30,7 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 try:
@@ -463,6 +463,118 @@ def api_ask(req: AskRequest):
         "device": state.device,
         "n_sources": len(results),
     }
+
+
+@app.post("/api/ask/stream")
+def api_ask_stream(req: AskRequest):
+    """
+    Igual que /api/ask pero devuelve Server-Sent Events (SSE) con:
+      - { type: "status", msg: "..." }          estado del proceso
+      - { type: "chunk",  index, doc, score, chunk_id }  fragmento RAG recuperado
+      - { type: "token",  content: "..." }       token del LLM en tiempo real
+      - { type: "done",   sources: [...] }       fin de la respuesta
+      - { type: "error",  msg: "..." }           si algo falla
+    """
+    if state.index is None or not state.metadata:
+        raise HTTPException(
+            status_code=400,
+            detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'."
+        )
+    if state.llm_client is None:
+        state.connect_llm()
+        if state.llm_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}."
+            )
+
+    # Construir el prompt de historial aquí (fuera del generador, en hilo sync)
+    system_prompt = (
+        "Eres un asistente experto en regulaciones técnicas de Fórmula 1 (FIA 2026). "
+        "Respondes apoyándote ÚNICAMENTE en los fragmentos del documento que se te proporcionan. "
+        "Si la respuesta no está en el contexto, dilo claramente. "
+        "Cuando sea posible, menciona los números de fragmento que respaldan la respuesta. "
+        "Sé claro, técnico y conciso."
+    )
+
+    def build_messages(context: str) -> list:
+        msgs = [{"role": "system", "content": system_prompt}]
+        if req.use_history and req.history:
+            hist = [
+                m for m in req.history[-12:]
+                if m.role in ("user", "assistant") and m.content.strip()
+            ]
+            while hist and hist[0].role == "assistant":
+                hist.pop(0)
+            while hist and hist[-1].role == "user":
+                hist.pop()
+            for m in hist:
+                msgs.append({"role": m.role, "content": m.content})
+        user_prompt = (
+            f"Pregunta:\n{req.question}\n\n"
+            f"Contexto recuperado:\n{context}\n\n"
+            "Responde basándote únicamente en el contexto. Cita los fragmentos relevantes."
+        )
+        msgs.append({"role": "user", "content": user_prompt})
+        return msgs
+
+    def sse(data: dict) -> str:
+        return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    def generate():
+        # ── 1. Recuperar fragmentos ──
+        yield sse({"type": "status", "msg": "🔍 Buscando en el índice FAISS…"})
+
+        results = _retrieve(req.question, top_k=max(1, min(req.top_k, 15)))
+
+        if not results:
+            yield sse({"type": "status", "msg": "⚠ Sin fragmentos relevantes encontrados."})
+        else:
+            yield sse({"type": "status", "msg": f"✓ {len(results)} fragmento(s) recuperado(s)"})
+
+        for i, r in enumerate(results):
+            yield sse({
+                "type":     "chunk",
+                "index":    i + 1,
+                "doc":      r["documento"],
+                "score":    round(r["score"], 4),
+                "chunk_id": r["chunk_id"],
+            })
+
+        context = _build_context(results)
+
+        # ── 2. Llamar al LLM con streaming ──
+        yield sse({"type": "status", "msg": f"🤖 Llamando a {state.llm_model_name}…"})
+
+        messages = build_messages(context)
+
+        try:
+            stream = state.llm_client.chat.completions.create(
+                model=state.llm_model_name,
+                temperature=float(req.temperature),
+                messages=messages,
+                stream=True,
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield sse({"type": "token", "content": chunk.choices[0].delta.content})
+
+        except Exception as e:
+            yield sse({"type": "error", "msg": f"Error LLM: {e}"})
+            return
+
+        # ── 3. Fin ──
+        yield sse({"type": "done", "sources": results})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":       "keep-alive",
+        },
+    )
 
 
 # =========================
