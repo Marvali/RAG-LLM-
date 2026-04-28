@@ -4,7 +4,7 @@
 ============================================================ */
 
 function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat,
-                        tab, setTab, onOpenSettings, status }) {
+                        tab, setTab, onOpenSettings, status, onCollapse }) {
 
   const ragReady  = !!status?.ready;
   const llmOnline = !!status?.llm_connected;
@@ -12,37 +12,55 @@ function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteCha
   return (
     <div className="app-sidebar">
 
-      {/* ── Logo ── */}
+      {/* ── Logo + botón colapsar ── */}
       <div className="px-4 py-3.5 border-b border-white/[0.07]">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-800 grid place-items-center glow-red shrink-0">
+          <div
+            className="w-9 h-9 rounded-xl grid place-items-center glow-accent shrink-0"
+            style={{ background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))" }}
+          >
             <span className="text-base">🏁</span>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-[9.5px] uppercase tracking-[0.32em] text-white/35">Agentic RAG</div>
             <div className="text-[14px] font-semibold leading-tight">F1 2026</div>
           </div>
+          {/* Botón colapsar sidebar (solo desktop) */}
+          <button
+            onClick={onCollapse}
+            title="Ocultar sidebar"
+            className="hidden md:grid shrink-0 w-7 h-7 rounded-lg border border-white/10 hover:bg-white/[0.08] place-items-center text-white/35 hover:text-white/75 transition"
+          >
+            <Icon.PanelClose className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
-      {/* ── Tabs Chat / RAG ── */}
+      {/* ── Tabs Chat / RAG / Stats ── */}
       <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.07]">
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           {[
             { id: "chat",  label: "Chat",  IconC: Icon.Chat },
             { id: "rag",   label: "RAG",   IconC: Icon.Layers },
-          ].map(({ id, label, IconC }) => (
+            { id: "stats", label: "Stats", emoji: "📊" },
+          ].map(({ id, label, IconC, emoji }) => (
             <button
               key={id}
               onClick={() => setTab(id)}
               className={cls(
-                "px-3 py-1.5 rounded-xl text-[12px] font-medium flex items-center justify-center gap-1.5 transition",
-                tab === id
-                  ? "bg-red-600/20 text-red-300 border border-red-500/30"
-                  : "text-white/50 hover:text-white/80 hover:bg-white/[0.05] border border-transparent"
+                "px-2 py-1.5 rounded-xl text-[11.5px] font-medium flex items-center justify-center gap-1 transition border",
+                tab !== id && "text-white/50 hover:text-white/80 hover:bg-white/[0.05] border-transparent"
               )}
+              style={tab === id ? {
+                background:  "var(--accent-bg10)",
+                color:       "var(--accent-text)",
+                borderColor: "var(--accent-border)",
+              } : undefined}
             >
-              <IconC className="w-3.5 h-3.5" />
+              {emoji
+                ? <span className="text-[13px]">{emoji}</span>
+                : <IconC className="w-3.5 h-3.5" />
+              }
               {label}
             </button>
           ))}

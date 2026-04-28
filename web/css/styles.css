@@ -2,9 +2,83 @@
    VARIABLES & BASE
 ============================================================ */
 :root {
+  /* Legacy (backward compat) */
   --accent: 220 38 38;
   --accent-soft: 251 113 133;
   --accent-2: 250 204 21;
+
+  /* ── Theme tokens (overrideable por data-theme) ── */
+  --accent-from:        #dc2626;
+  --accent-to:          #991b1b;
+  --accent-mid:         #ef4444;
+  --accent-text:        #fca5a5;
+  --accent-glow:        rgba(220,38,38,0.65);
+  --accent-bg10:        rgba(220,38,38,0.10);
+  --accent-bg20:        rgba(220,38,38,0.20);
+  --accent-border:      rgba(239,68,68,0.30);
+  --accent-ring:        rgba(220,38,38,0.35);
+  /* Color del texto dentro de la burbuja del usuario */
+  --bubble-user-text:   #ffffff;
+}
+
+/* ── Temas alternativos ── */
+[data-theme="blue"] {
+  --accent-from:   #0284c7;
+  --accent-to:     #075985;
+  --accent-mid:    #38bdf8;
+  --accent-text:   #7dd3fc;
+  --accent-glow:   rgba(14,165,233,0.65);
+  --accent-bg10:   rgba(14,165,233,0.10);
+  --accent-bg20:   rgba(14,165,233,0.20);
+  --accent-border: rgba(56,189,248,0.30);
+  --accent-ring:   rgba(14,165,233,0.35);
+}
+[data-theme="violet"] {
+  --accent-from:   #7c3aed;
+  --accent-to:     #4c1d95;
+  --accent-mid:    #a78bfa;
+  --accent-text:   #c4b5fd;
+  --accent-glow:   rgba(124,58,237,0.65);
+  --accent-bg10:   rgba(124,58,237,0.10);
+  --accent-bg20:   rgba(124,58,237,0.20);
+  --accent-border: rgba(167,139,250,0.30);
+  --accent-ring:   rgba(124,58,237,0.35);
+}
+[data-theme="emerald"] {
+  --accent-from:   #059669;
+  --accent-to:     #064e3b;
+  --accent-mid:    #34d399;
+  --accent-text:   #6ee7b7;
+  --accent-glow:   rgba(5,150,105,0.65);
+  --accent-bg10:   rgba(5,150,105,0.10);
+  --accent-bg20:   rgba(5,150,105,0.20);
+  --accent-border: rgba(52,211,153,0.30);
+  --accent-ring:   rgba(5,150,105,0.35);
+}
+[data-theme="amber"] {
+  --accent-from:   #d97706;
+  --accent-to:     #92400e;
+  --accent-mid:    #fbbf24;
+  --accent-text:   #fcd34d;
+  --accent-glow:   rgba(217,119,6,0.65);
+  --accent-bg10:   rgba(217,119,6,0.10);
+  --accent-bg20:   rgba(217,119,6,0.20);
+  --accent-border: rgba(251,191,36,0.30);
+  --accent-ring:   rgba(217,119,6,0.35);
+}
+/* ── Tema Blanco Platino ── */
+[data-theme="white"] {
+  --accent-from:        #f1f5f9;        /* slate-100 */
+  --accent-to:          #94a3b8;        /* slate-400 */
+  --accent-mid:         #e2e8f0;        /* slate-200 */
+  --accent-text:        #f8fafc;        /* slate-50  — texto en tabs (fondo oscuro) */
+  --accent-glow:        rgba(241,245,249,0.50);
+  --accent-bg10:        rgba(241,245,249,0.10);
+  --accent-bg20:        rgba(241,245,249,0.18);
+  --accent-border:      rgba(241,245,249,0.28);
+  --accent-ring:        rgba(203,213,225,0.45);
+  /* El texto sobre la burbuja blanca debe ser oscuro */
+  --bubble-user-text:   #0f172a;        /* slate-900 */
 }
 html, body, #root {
   height: 100%;
@@ -118,6 +192,12 @@ html, body, #root {
     0 0 0 1px rgba(220,38,38,0.35),
     0 0 32px rgba(220,38,38,0.25);
 }
+/* Versión que respeta el tema activo */
+.glow-accent {
+  box-shadow:
+    0 0 0 1px var(--accent-ring),
+    0 0 32px var(--accent-bg20);
+}
 
 /* ============================================================
    RANGE SLIDER
@@ -130,8 +210,8 @@ input[type="range"].f1-range {
   border-radius: 9999px;
   background: linear-gradient(
     90deg,
-    rgba(220,38,38,0.7) 0%,
-    rgba(220,38,38,0.7) var(--p,30%),
+    var(--accent-from) 0%,
+    var(--accent-from) var(--p,30%),
     rgba(255,255,255,0.1) var(--p,30%)
   );
   outline: none;
@@ -141,15 +221,15 @@ input[type="range"].f1-range::-webkit-slider-thumb {
   width: 16px; height: 16px;
   border-radius: 9999px;
   background: #fff;
-  border: 2px solid rgba(220,38,38,0.9);
+  border: 2px solid var(--accent-mid);
   cursor: pointer;
-  box-shadow: 0 0 10px rgba(220,38,38,0.6);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 input[type="range"].f1-range::-moz-range-thumb {
   width: 16px; height: 16px;
   border-radius: 9999px;
   background: #fff;
-  border: 2px solid rgba(220,38,38,0.9);
+  border: 2px solid var(--accent-mid);
   cursor: pointer;
 }
 
@@ -233,7 +313,7 @@ input[type="range"].f1-range::-moz-range-thumb {
   box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   transition: transform 0.2s;
 }
-.toggle-track.on  { background: rgb(220,38,38); }
+.toggle-track.on  { background: var(--accent-from); }
 .toggle-track.off { background: rgba(255,255,255,0.15); }
 .toggle-track.on  .toggle-thumb { transform: translateX(21px); }
 .toggle-track.off .toggle-thumb { transform: translateX(3px); }

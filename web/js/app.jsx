@@ -14,6 +14,7 @@ function App() {
       temperature: s.temperature ?? 0.2,
       topK:        s.topK        ?? 5,
       useHistory:  s.useHistory  ?? true,
+      theme:       s.theme       ?? "red",
     };
   });
   const [settingsOpen, setSettingsOpen] = _useStateApp(false);
@@ -383,12 +384,16 @@ function App() {
     finally { setRebuilding(false); }
   }
 
-  /* ── Sidebar mobile ── */
-  const [sidebarOpen, setSidebarOpen] = _useStateApp(false);
+  /* ── Sidebar ── */
+  const [sidebarOpen,      setSidebarOpen]      = _useStateApp(false);   // mobile overlay
+  const [desktopSidebarOn, setDesktopSidebarOn] = _useStateApp(true);    // desktop collapse
+
+  /* ── Panel de fuentes (derecha) ── */
+  const [sourcesOpen, setSourcesOpen] = _useStateApp(true);
 
   /* ── Render ── */
   return (
-    <div className="relative w-screen h-screen overflow-hidden text-white">
+    <div className="relative w-screen h-screen overflow-hidden text-white" data-theme={settings.theme}>
 
       {/* Vídeo de fondo */}
       <video autoPlay loop muted playsInline
@@ -415,10 +420,14 @@ function App() {
         )}
 
         {/* Sidebar */}
-        <div className={[
-          "fixed md:relative z-40 md:z-auto h-full transition-transform duration-300 ease-in-out",
+        <div className={cls(
+          "h-full transition-all duration-300 ease-in-out overflow-hidden shrink-0",
+          // Mobile: posición fija que desliza desde la izquierda
+          "fixed md:relative z-40 md:z-auto",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-        ].join(" ")}>
+          // Desktop: colapso por ancho
+          desktopSidebarOn ? "md:w-[248px]" : "md:w-0"
+        )}>
           <ChatSidebar
             chats={chats}
             activeChatId={activeChatId}
@@ -428,15 +437,28 @@ function App() {
             tab={tab}
             setTab={setTab}
             onOpenSettings={() => setSettingsOpen(true)}
+            onCollapse={() => setDesktopSidebarOn(false)}
             status={status}
           />
         </div>
+
+        {/* Botón flotante para re-abrir sidebar (desktop, cuando está colapsada) */}
+        {!desktopSidebarOn && (
+          <button
+            onClick={() => setDesktopSidebarOn(true)}
+            title="Mostrar sidebar"
+            className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-50 w-8 h-16 rounded-r-xl border border-white/15 bg-black/40 backdrop-blur-xl items-center justify-center text-white/45 hover:text-white/80 hover:bg-white/[0.08] transition"
+          >
+            <Icon.PanelOpen className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Main */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
 
           {/* Top bar */}
           <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.07] bg-black/20 backdrop-blur-xl shrink-0">
+            {/* Mobile: abrir overlay sidebar */}
             <button
               onClick={() => setSidebarOpen(o => !o)}
               className="md:hidden w-8 h-8 rounded-lg border border-white/10 hover:bg-white/[0.08] grid place-items-center text-white/55 hover:text-white transition"
@@ -446,13 +468,14 @@ function App() {
 
             <div className="flex-1 min-w-0">
               <div className="text-[9.5px] uppercase tracking-[0.32em] text-white/30">
-                {tab === "chat" ? "Conversación activa" : "Pit lane · Gestor RAG"}
+                {tab === "chat"  ? "Conversación activa"
+                 : tab === "rag" ? "Pit lane · Gestor RAG"
+                 : "Análisis · Índice FAISS"}
               </div>
               <div className="text-[14px] font-semibold truncate leading-tight">
-                {tab === "chat"
-                  ? (activeChat?.title || "Nueva conversación")
-                  : "Documentos & Reindexado"
-                }
+                {tab === "chat"  ? (activeChat?.title || "Nueva conversación")
+                 : tab === "rag" ? "Documentos & Reindexado"
+                 : "Estadísticas RAG"}
               </div>
             </div>
 
@@ -461,6 +484,20 @@ function App() {
                 <Icon.Spark className="w-3 h-3" />
                 {sources.length} fuente{sources.length !== 1 ? "s" : ""}
               </div>
+            )}
+
+            {/* Toggle panel de fuentes (solo chat, solo xl) */}
+            {tab === "chat" && (
+              <button
+                onClick={() => setSourcesOpen(o => !o)}
+                title={sourcesOpen ? "Ocultar fuentes" : "Mostrar fuentes"}
+                className="hidden xl:grid w-8 h-8 rounded-lg border border-white/10 hover:bg-white/[0.08] place-items-center text-white/40 hover:text-white/75 transition shrink-0"
+              >
+                {sourcesOpen
+                  ? <Icon.PanelRightClose className="w-4 h-4" />
+                  : <Icon.PanelRightOpen  className="w-4 h-4" />
+                }
+              </button>
             )}
 
             {status && (
@@ -494,9 +531,12 @@ function App() {
                   />
                 </div>
 
-                {/* Panel de fuentes lateral */}
-                <div className="hidden xl:flex w-72 shrink-0 border-l border-white/[0.07] flex-col bg-black/10">
-                  <div className="p-4 flex-1 min-h-0 overflow-y-auto nice-scroll">
+                {/* Panel de fuentes lateral (colapsable) */}
+                <div className={cls(
+                  "hidden xl:flex shrink-0 border-l border-white/[0.07] flex-col bg-black/10 transition-all duration-300 overflow-hidden",
+                  sourcesOpen ? "w-72" : "w-0 border-l-0"
+                )}>
+                  <div className="p-4 flex-1 min-h-0 overflow-y-auto nice-scroll w-72">
                     <div className="flex items-center gap-2 text-[10.5px] uppercase tracking-[0.25em] text-white/40 mb-3">
                       <Icon.Spark className="w-3.5 h-3.5" />
                       Fuentes consultadas
@@ -530,6 +570,12 @@ function App() {
                   onRebuild={handleRebuild}
                   onRefresh={refreshStatus}
                 />
+              </div>
+            )}
+
+            {tab === "stats" && (
+              <div className="flex-1 min-w-0 min-h-0">
+                <StatsView />
               </div>
             )}
           </div>

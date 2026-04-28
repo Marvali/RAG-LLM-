@@ -236,53 +236,90 @@ function SourceCard({ s, idx }) {
 
 /* ─────────────────────────────────────────
    BUBBLE — mensaje de chat
-   Los mensajes del asistente tienen botón
-   "Copiar" que aparece al pasar el ratón.
+   Asistente: botones Copiar + TTS (leer en voz alta)
+   Burbuja de usuario usa CSS vars del tema activo.
 ───────────────────────────────────────── */
+
+/** Quita marcado Markdown para que el TTS lea texto limpio */
+function _stripMd(md) {
+  return (md || "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`]+`/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/\n+/g, " ")
+    .trim();
+}
+
 function Bubble({ m }) {
   const isUser = m.role === "user";
-  const [copied, setCopied] = _useState(false);
+  const [copied,   setCopied]   = _useState(false);
+  const [speaking, setSpeaking] = _useState(false);
 
+  /* ── Copiar ── */
   function handleCopy() {
     navigator.clipboard.writeText(m.content || "").then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
     }).catch(() => {
-      // Fallback para contextos sin clipboard API
       const ta = document.createElement("textarea");
       ta.value = m.content || "";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
     });
   }
+
+  /* ── Text-to-Speech ── */
+  function handleSpeak() {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const text = _stripMd(m.content);
+    if (!text) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang  = "es-ES";
+    utter.rate  = 0.97;
+    utter.onend   = () => setSpeaking(false);
+    utter.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utter);
+    setSpeaking(true);
+  }
+
+  /* Burbuja usuario: usa tokens del tema activo */
+  const userBubbleStyle = {
+    background:  "linear-gradient(135deg, var(--accent-from), var(--accent-to))",
+    boxShadow:   "0 8px 30px -10px var(--accent-glow)",
+    borderColor: "var(--accent-border)",
+  };
 
   return (
     <div className={cls("w-full flex", isUser ? "justify-end" : "justify-start")}>
       <div className={cls("group relative", isUser ? "max-w-[80%]" : "max-w-[85%] w-full")}>
 
         {/* Burbuja */}
-        <div className={cls(
-          "rounded-2xl px-4 py-3 fade-in",
-          isUser
-            ? "bg-gradient-to-br from-red-600 to-red-700 text-white shadow-[0_8px_30px_-10px_rgba(220,38,38,0.55)] border border-red-400/20"
-            : cls(
-                "bg-white/[0.06] backdrop-blur-md border text-white/90",
-                m.streaming
-                  ? "border-white/20 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]"
-                  : "border-white/10"
-              )
-        )}>
+        <div
+          className={cls(
+            "rounded-2xl px-4 py-3 fade-in border",
+            !isUser && cls(
+              "bg-white/[0.06] backdrop-blur-md text-white/90",
+              m.streaming ? "border-white/20" : "border-white/10"
+            )
+          )}
+          style={isUser ? userBubbleStyle : undefined}
+        >
           {!isUser && (
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-5 h-5 rounded-md bg-red-500/15 border border-red-500/30 grid place-items-center">
+              <div
+                className="w-5 h-5 rounded-md grid place-items-center"
+                style={{ background: "var(--accent-bg10)", border: "1px solid var(--accent-border)" }}
+              >
                 <span className="text-[10px]">🏁</span>
               </div>
               <span className="text-[10.5px] uppercase tracking-[0.22em] text-white/45">Asistente</span>
-              {/* Indicador de streaming */}
               {m.streaming && (
                 <span className="ml-auto flex items-center gap-1 text-[10px] text-white/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-pulse" />
@@ -293,11 +330,11 @@ function Bubble({ m }) {
           )}
 
           <div
-            className={cls("prose-rag text-[14px]", isUser ? "text-white" : "text-white/90")}
+            className={cls("prose-rag text-[14px]", !isUser && "text-white/90")}
+            style={isUser ? { color: "var(--bubble-user-text)" } : undefined}
             dangerouslySetInnerHTML={{ __html: mdToHtml(m.content || "") }}
           />
 
-          {/* Cursor de escritura */}
           {m.streaming && (
             <span
               className="inline-block w-[7px] h-[15px] ml-0.5 bg-white/50 align-middle"
@@ -306,11 +343,32 @@ function Bubble({ m }) {
           )}
         </div>
 
-        {/* Botón copiar (solo para asistente, no mientras hace streaming) */}
+        {/* Botones flotantes Leer + Copiar (solo asistente, no streaming) */}
         {!isUser && !m.streaming && m.content && (
-          <div className="absolute -bottom-7 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute -bottom-7 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+
+            {/* TTS */}
+            <button
+              onClick={handleSpeak}
+              title={speaking ? "Detener lectura" : "Leer en voz alta"}
+              className={cls(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition border",
+                speaking
+                  ? "bg-sky-500/20 border-sky-400/30 text-sky-300"
+                  : "bg-black/50 border-white/15 text-white/55 hover:text-white/85 hover:bg-white/[0.08]"
+              )}
+            >
+              {speaking
+                ? <Icon.VolumeX className="w-3 h-3" />
+                : <Icon.Volume   className="w-3 h-3" />
+              }
+              {speaking ? "Parar" : "Leer"}
+            </button>
+
+            {/* Copiar */}
             <button
               onClick={handleCopy}
+              title="Copiar respuesta"
               className={cls(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition border",
                 copied
@@ -319,10 +377,7 @@ function Bubble({ m }) {
               )}
             >
               {copied ? (
-                <>
-                  <Icon.CheckCircle className="w-3 h-3" />
-                  Copiado
-                </>
+                <><Icon.CheckCircle className="w-3 h-3" />Copiado</>
               ) : (
                 <>
                   <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

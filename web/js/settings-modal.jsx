@@ -4,10 +4,20 @@
 ============================================================ */
 const { useState: _useStateS, useEffect: _useEffectS } = React;
 
+const THEMES = [
+  { id: "red",     label: "F1 Rojo",    from: "#dc2626", to: "#991b1b" },
+  { id: "blue",    label: "Titán Azul", from: "#0284c7", to: "#075985" },
+  { id: "violet",  label: "Violeta",    from: "#7c3aed", to: "#4c1d95" },
+  { id: "emerald", label: "Esmeralda",  from: "#059669", to: "#064e3b" },
+  { id: "amber",   label: "Ámbar",      from: "#d97706", to: "#92400e" },
+  { id: "white",   label: "Platino",    from: "#f1f5f9", to: "#94a3b8", dark: true },
+];
+
 function SettingsModal({ open, onClose, settings, onSave, status }) {
   const [temp,     setTemp]     = _useStateS(settings.temperature ?? 0.2);
   const [topK,     setTopK]     = _useStateS(settings.topK ?? 5);
   const [useHist,  setUseHist]  = _useStateS(settings.useHistory ?? true);
+  const [theme,    setTheme]    = _useStateS(settings.theme ?? "red");
 
   /* Sync cuando se abre */
   _useEffectS(() => {
@@ -15,6 +25,7 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
       setTemp(settings.temperature ?? 0.2);
       setTopK(settings.topK ?? 5);
       setUseHist(settings.useHistory ?? true);
+      setTheme(settings.theme ?? "red");
     }
   }, [open]);
 
@@ -29,7 +40,7 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
   if (!open) return null;
 
   function handleSave() {
-    onSave({ temperature: temp, topK, useHistory: useHist });
+    onSave({ temperature: temp, topK, useHistory: useHist, theme });
     onClose();
   }
 
@@ -127,6 +138,42 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
             </div>
           </div>
 
+          {/* Selector de tema */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Icon.Palette className="w-4 h-4 text-white/50" style={{width:15,height:15}} />
+              <span className="text-[13px] font-medium text-white/85">Tema de color</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {THEMES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTheme(t.id)}
+                  title={t.label}
+                  className="flex flex-col items-center gap-1.5 group"
+                >
+                  <div
+                    className="w-8 h-8 rounded-full transition-all duration-150"
+                    style={{
+                      background: `linear-gradient(135deg, ${t.from}, ${t.to})`,
+                      outline: t.dark ? "1px solid rgba(255,255,255,0.25)" : "none",
+                      boxShadow: theme === t.id
+                        ? `0 0 0 2px ${t.dark ? "#555" : "#fff"}, 0 0 0 4px ${t.from}`
+                        : "none",
+                      transform: theme === t.id ? "scale(1.15)" : "scale(1)",
+                    }}
+                  />
+                  <span className={cls(
+                    "text-[9.5px] transition",
+                    theme === t.id ? "text-white/80" : "text-white/35 group-hover:text-white/60"
+                  )}>
+                    {t.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Info backend (solo lectura) */}
           {status && (
             <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5 font-mono text-[11.5px]">
@@ -159,7 +206,11 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
         <div className="px-5 pb-5">
           <button
             onClick={handleSave}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-br from-red-600 to-red-700 text-white text-[13px] font-semibold hover:brightness-110 transition shadow-[0_6px_22px_-8px_rgba(220,38,38,0.7)] flex items-center justify-center gap-2"
+            className="w-full py-2.5 rounded-xl text-white text-[13px] font-semibold hover:brightness-110 transition flex items-center justify-center gap-2"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))",
+              boxShadow:  "0 6px 22px -8px var(--accent-glow)",
+            }}
           >
             <Icon.CheckCircle className="w-4 h-4" />
             Guardar y cerrar
