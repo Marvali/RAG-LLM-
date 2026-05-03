@@ -263,6 +263,10 @@ def _retrieve(query: str, top_k: int) -> list[dict]:
             "chunk_id": int(item["chunk_id"]),
             "chunk_len": int(item.get("chunk_len", len(item.get("chunk_text", "")))),
             "chunk_text": item["chunk_text"],
+            "article_number": item.get("article_number"),
+            "article_title": item.get("article_title"),
+            "section": item.get("section"),
+            "context": item.get("context"),
         })
     return results
 
@@ -303,17 +307,23 @@ def _do_rebuild():
             if not text:
                 continue
             documents.append({"path": pdf_path, "text": text})
-            doc_chunks = es_mod.chunk_text(
+            doc_name = os.path.basename(pdf_path)
+            doc_chunks = es_mod.chunk_by_articles(
                 text,
-                chunk_size=es_mod.CHUNK_SIZE,
+                doc_name=doc_name,
+                max_chunk_size=es_mod.MAX_ARTICLE_CHUNK_SIZE,
                 overlap=es_mod.CHUNK_OVERLAP,
             )
             for i, c in enumerate(doc_chunks):
                 all_chunks.append({
-                    "documento": os.path.basename(pdf_path),
+                    "documento": doc_name,
                     "chunk_id": i,
-                    "chunk_text": c,
-                    "chunk_len": len(c),
+                    "chunk_text": c["chunk_text"],
+                    "chunk_len": len(c["chunk_text"]),
+                    "article_number": c.get("article_number"),
+                    "article_title": c.get("article_title"),
+                    "section": c.get("section"),
+                    "context": c.get("context"),
                 })
 
         if not all_chunks:
