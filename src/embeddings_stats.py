@@ -21,7 +21,7 @@ OUTPUT_FOLDER = "output"             # carpeta de salida
 CHUNK_SIZE = 1000                    # tamaño de chunk en caracteres
 CHUNK_OVERLAP = 200                  # solapamiento entre chunks
 TOP_N_WORDS = 30                     # vocabulario más frecuente
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 BATCH_SIZE = 32
 
 

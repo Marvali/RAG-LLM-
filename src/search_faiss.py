@@ -27,7 +27,7 @@ OUTPUT_FOLDER = "output"
 FAISS_INDEX_FILE = os.path.join(OUTPUT_FOLDER, "faiss_index.bin")
 METADATA_JSON_FILE = os.path.join(OUTPUT_FOLDER, "faiss_metadata.json")
 
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 TOP_K = 5
 USE_COSINE_SIMILARITY = True
 

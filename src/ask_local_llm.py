@@ -36,7 +36,7 @@ OUTPUT_FOLDER = "output"
 FAISS_INDEX_FILE = os.path.join(OUTPUT_FOLDER, "faiss_index.bin")
 METADATA_JSON_FILE = os.path.join(OUTPUT_FOLDER, "faiss_metadata.json")
 
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 TOP_K = 5
 USE_COSINE_SIMILARITY = True
 
@@ -180,13 +180,15 @@ def ask_llm(client, model_name, user_question, context):
         "Use only the provided context.\n"
         "If the answer is not in the context, say you are not sure based on the retrieved fragments.\n"
         "When possible, mention the relevant fragment numbers.\n"
-        "Answer clearly and briefly."
+        "Answer clearly and briefly.\n"
+        "IMPORTANT: Detect the language of the user's question and respond in that same language. "
+        "If the question is in Spanish, answer in Spanish. If the question is in English, answer in English."
     )
 
     user_prompt = (
         f"Question:\n{user_question}\n\n"
         f"Context:\n{context}\n\n"
-        "Answer based only on the context."
+        "Answer based only on the context, in the same language as the question above."
     )
 
     response = client.chat.completions.create(

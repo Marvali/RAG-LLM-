@@ -58,7 +58,7 @@ WEB_FOLDER = os.path.join(ROOT_DIR, "web")
 FAISS_INDEX_FILE = os.path.join(OUTPUT_FOLDER, "faiss_index.bin")
 METADATA_JSON_FILE = os.path.join(OUTPUT_FOLDER, "faiss_metadata.json")
 
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 USE_COSINE_SIMILARITY = True
 
 LM_STUDIO_BASE_URL = "http://localhost:1234/v1"
@@ -196,11 +196,11 @@ def _rewrite_and_expand_query(user_query: str, history: list) -> str:
         return user_query
 
     system_prompt = (
-        "Eres un experto en recuperación de información. Tu única tarea es optimizar la pregunta del usuario para un sistema de búsqueda vectorial (RAG). \n"
-        "Pasos:\n"
-        "1. Analiza el historial (si lo hay) para dar contexto completo a la pregunta actual (Query Rewriting).\n"
-        "2. Expande la consulta añadiendo sinónimos y términos clave que ayuden a encontrar mejores fragmentos relacionados con la pregunta original (Query Expansion).\n"
-        "Devuelve ÚNICAMENTE la consulta optimizada en una sola línea. No des explicaciones, ni saludes, ni pongas comillas."
+        "You are an expert in information retrieval. Your only task is to optimize the user's query for a vector search system (RAG).\n"
+        "Steps:\n"
+        "1. Analyze the history (if any) to give full context to the current question (Query Rewriting).\n"
+        "2. Expand the query by adding synonyms and key terms in BOTH Spanish and English to maximize retrieval of relevant fragments (Query Expansion).\n"
+        "Return ONLY the optimized query on a single line. No explanations, no greetings, no quotes."
     )
 
     # Construir un bloque de historial compacto (solo últimos turnos)
@@ -652,11 +652,13 @@ def api_ask(req: AskRequest):
     context = _build_context(results)
 
     system_prompt = (
-        "Eres un asistente experto diseñado para responder preguntas basándose estrictamente en los documentos proporcionados. "
-        "Responde apoyándote ÚNICAMENTE en los fragmentos de texto recuperados. "
-        "Si la respuesta no se encuentra en el contexto proporcionado, dilo claramente y no intentes inventar la información. "
-        "Cuando sea posible, menciona los números de fragmento que respaldan tu respuesta. "
-        "Sé claro y conciso."
+        "You are an expert assistant designed to answer questions based strictly on the provided documents. "
+        "Answer using ONLY the retrieved text fragments. "
+        "If the answer is not found in the provided context, say so clearly and do not invent information. "
+        "When possible, mention the fragment numbers that support your answer. "
+        "Be clear and concise. "
+        "IMPORTANT: Detect the language of the user's question and respond in that same language. "
+        "If the question is in Spanish, answer entirely in Spanish. If the question is in English, answer entirely in English."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -678,9 +680,9 @@ def api_ask(req: AskRequest):
             messages.append({"role": m.role, "content": m.content})
 
     user_prompt = (
-        f"Pregunta:\n{req.question}\n\n"
-        f"Contexto recuperado:\n{context}\n\n"
-        "Responde basándote únicamente en el contexto. Cita los fragmentos relevantes."
+        f"Question:\n{req.question}\n\n"
+        f"Retrieved context:\n{context}\n\n"
+        "Answer based only on the context above, in the same language as the question. Cite relevant fragments."
     )
     messages.append({"role": "user", "content": user_prompt})
 
@@ -730,11 +732,13 @@ def api_ask_stream(req: AskRequest):
 
     # Construir el prompt de historial aquí (fuera del generador, en hilo sync)
     system_prompt = (
-        "Eres un asistente experto diseñado para responder preguntas basándose estrictamente en los documentos proporcionados. "
-        "Responde apoyándote ÚNICAMENTE en los fragmentos de texto recuperados. "
-        "Si la respuesta no se encuentra en el contexto proporcionado, dilo claramente y no intentes inventar la información. "
-        "Cuando sea posible, menciona los números de fragmento que respaldan tu respuesta. "
-        "Sé claro y conciso."
+        "You are an expert assistant designed to answer questions based strictly on the provided documents. "
+        "Answer using ONLY the retrieved text fragments. "
+        "If the answer is not found in the provided context, say so clearly and do not invent information. "
+        "When possible, mention the fragment numbers that support your answer. "
+        "Be clear and concise. "
+        "IMPORTANT: Detect the language of the user's question and respond in that same language. "
+        "If the question is in Spanish, answer entirely in Spanish. If the question is in English, answer entirely in English."
     )
 
     def build_messages(context: str, question: str) -> list:
@@ -751,9 +755,9 @@ def api_ask_stream(req: AskRequest):
             for m in hist:
                 msgs.append({"role": m.role, "content": m.content})
         user_prompt = (
-            f"Pregunta:\n{question}\n\n"
-            f"Contexto recuperado:\n{context}\n\n"
-            "Responde basándote únicamente en el contexto. Cita los fragmentos relevantes."
+            f"Question:\n{question}\n\n"
+            f"Retrieved context:\n{context}\n\n"
+            "Answer based only on the context above, in the same language as the question. Cite relevant fragments."
         )
         msgs.append({"role": "user", "content": user_prompt})
         return msgs
