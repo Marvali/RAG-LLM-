@@ -133,7 +133,7 @@ state = RAGState()
 # =========================
 # FASTAPI
 # =========================
-app = FastAPI(title="Agentic RAG - F1 2026", version="1.0.0")
+app = FastAPI(title="Agentic RAG", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -181,6 +181,70 @@ def _embed_query(query: str) -> np.ndarray:
     if USE_COSINE_SIMILARITY:
         qv = _normalize(qv)
     return qv.reshape(1, -1)
+
+
+def _rewrite_and_expand_query(user_query: str, history: list) -> str:
+    """
+    Optimiza la pregunta del usuario antes de la búsqueda vectorial:
+      1. Query Rewriting: usa el historial para dar contexto a la pregunta actual.
+      2. Query Expansion: añade sinónimos / términos clave relacionados.
+
+    Si el LLM no está disponible o la llamada falla, devuelve la `user_query`
+    original como fallback (defensivo: nunca rompe el pipeline RAG).
+    """
+    if state.llm_client is None or not user_query or not user_query.strip():
+        return user_query
+
+    system_prompt = (
+        "Eres un experto en recuperación de información. Tu única tarea es optimizar la pregunta del usuario para un sistema de búsqueda vectorial (RAG). \n"
+        "Pasos:\n"
+        "1. Analiza el historial (si lo hay) para dar contexto completo a la pregunta actual (Query Rewriting).\n"
+        "2. Expande la consulta añadiendo sinónimos y términos clave que ayuden a encontrar mejores fragmentos relacionados con la pregunta original (Query Expansion).\n"
+        "Devuelve ÚNICAMENTE la consulta optimizada en una sola línea. No des explicaciones, ni saludes, ni pongas comillas."
+    )
+
+    # Construir un bloque de historial compacto (solo últimos turnos)
+    history_text = ""
+    if history:
+        recent = []
+        for m in history[-6:]:
+            # `m` puede ser un ChatMessage (pydantic) o un dict
+            role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else None)
+            content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else None)
+            if not role or not content:
+                continue
+            if role not in ("user", "assistant"):
+                continue
+            content = str(content).strip()
+            if not content:
+                continue
+            recent.append(f"{role.upper()}: {content[:400]}")
+        if recent:
+            history_text = "\n".join(recent)
+
+    user_block = (
+        f"Historial reciente:\n{history_text}\n\n" if history_text else ""
+    ) + f"Pregunta actual del usuario:\n{user_query}\n\nConsulta optimizada:"
+
+    try:
+        response = state.llm_client.chat.completions.create(
+            model=state.llm_model_name,
+            temperature=0.1,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_block},
+            ],
+        )
+        rewritten = (response.choices[0].message.content or "").strip()
+        # Sanitizado mínimo: una sola línea, sin comillas envolventes
+        rewritten = rewritten.splitlines()[0].strip() if rewritten else ""
+        if rewritten.startswith(("\"", "'", "“", "‘")) and rewritten.endswith(("\"", "'", "”", "’")):
+            rewritten = rewritten[1:-1].strip()
+        # Si por algún motivo el LLM devolvió algo vacío, fallback
+        return rewritten or user_query
+    except Exception:
+        # Fallback silencioso: nunca rompemos el RAG por un fallo de reescritura
+        return user_query
 
 
 def _retrieve(query: str, top_k: int) -> list[dict]:
@@ -342,6 +406,174 @@ def api_status():
     }
 
 
+_STATS_CACHE: dict = {"sig": None, "data": None}
+_DOC_PALETTE = [
+    "#ef4444", "#f97316", "#a78bfa", "#38bdf8",
+    "#22c55e", "#eab308", "#ec4899", "#14b8a6",
+    "#f43f5e", "#8b5cf6", "#06b6d4", "#84cc16",
+]
+_STOPWORDS_ES = {
+    "de","la","el","y","en","a","los","las","del","que","un","una","por",
+    "para","con","se","no","es","al","lo","como","más","mas","o","su","sus",
+    "este","esta","estos","estas","esa","ese","esos","esas","sobre","entre",
+    "ya","si","sí","cuando","donde","muy","sin","ni","pero","también","tambien",
+    "ha","han","fue","ser","son","será","sera","están","estan","está","esta",
+    "ante","tras","desde","hasta","cada","todo","toda","todos","todas","otro","otra","otros","otras",
+    "the","and","of","to","in","is","it","for","on","as","be","by","with","that","this","an","or","at","from","are","was","were","but","not","which","can","may","shall","must",
+}
+
+
+def _compute_stats() -> dict:
+    """Calcula métricas reales del índice y las cachea por firma del archivo."""
+    if not (os.path.exists(FAISS_INDEX_FILE) and os.path.exists(METADATA_JSON_FILE)):
+        return {
+            "ready": False,
+            "doc_stats": [],
+            "faiss_meta": None,
+            "pca": [],
+            "vocab": [],
+            "totals": {"n_docs": 0, "n_chunks": 0, "n_tokens": 0, "n_words": 0, "avg_chunk_tokens": 0},
+        }
+
+    sig = (
+        os.path.getmtime(FAISS_INDEX_FILE),
+        os.path.getmtime(METADATA_JSON_FILE),
+        len(state.metadata or []),
+    )
+    if _STATS_CACHE.get("sig") == sig and _STATS_CACHE.get("data"):
+        return _STATS_CACHE["data"]
+
+    metadata = state.metadata or []
+
+    # ── Stats por documento ──
+    per_doc: dict[str, dict] = {}
+    for item in metadata:
+        doc = item.get("documento", "?")
+        text = item.get("chunk_text", "") or ""
+        n_words = len(text.split())
+        n_tokens = es_mod.estimate_tokens(text) if hasattr(es_mod, "estimate_tokens") else int(n_words * 1.47)
+        d = per_doc.setdefault(doc, {"documento": doc, "n_chunks": 0, "n_tokens": 0, "n_words": 0})
+        d["n_chunks"] += 1
+        d["n_tokens"] += n_tokens
+        d["n_words"]  += n_words
+
+    doc_stats = []
+    for d in per_doc.values():
+        d["avg_chunk_tokens"] = int(round(d["n_tokens"] / d["n_chunks"])) if d["n_chunks"] else 0
+        doc_stats.append(d)
+    doc_stats.sort(key=lambda x: x["n_chunks"], reverse=True)
+
+    totals = {
+        "n_docs": len(doc_stats),
+        "n_chunks": sum(d["n_chunks"] for d in doc_stats),
+        "n_tokens": sum(d["n_tokens"] for d in doc_stats),
+        "n_words":  sum(d["n_words"]  for d in doc_stats),
+    }
+    totals["avg_chunk_tokens"] = (
+        int(round(totals["n_tokens"] / totals["n_chunks"])) if totals["n_chunks"] else 0
+    )
+
+    # ── Vocabulario top-10 (sin stopwords, palabras ≥ 4 letras) ──
+    from collections import Counter
+    counter: Counter = Counter()
+    for item in metadata:
+        text = (item.get("chunk_text", "") or "").lower()
+        for w in es_mod.tokenize_words(text) if hasattr(es_mod, "tokenize_words") else text.split():
+            if len(w) < 4:
+                continue
+            if w in _STOPWORDS_ES:
+                continue
+            if w.isdigit():
+                continue
+            counter[w] += 1
+    vocab = [{"word": w, "count": c} for w, c in counter.most_common(10)]
+
+    # ── FAISS meta ──
+    n_vectors = state.index.ntotal if state.index is not None else 0
+    dimension = state.index.d if state.index is not None else 0
+    index_type = type(state.index).__name__ if state.index is not None else "—"
+    try:
+        index_size_bytes = os.path.getsize(FAISS_INDEX_FILE)
+    except Exception:
+        index_size_bytes = 0
+    faiss_meta = {
+        "n_vectors": int(n_vectors),
+        "dimension": int(dimension),
+        "index_type": index_type,
+        "index_size_bytes": int(index_size_bytes),
+        "model": EMBEDDING_MODEL,
+    }
+
+    # ── PCA 2D (sólo si tenemos embeddings persistidos) ──
+    pca_points: list[dict] = []
+    emb_path = os.path.join(OUTPUT_FOLDER, "embeddings.npy")
+    if os.path.exists(emb_path) and len(metadata) > 2:
+        try:
+            from sklearn.decomposition import PCA
+            emb = np.load(emb_path)
+            n = min(len(emb), len(metadata))
+            emb = emb[:n]
+            # Submuestreo para no enviar cientos de KB en JSON
+            MAX_POINTS = 350
+            if n > MAX_POINTS:
+                idxs = np.linspace(0, n - 1, MAX_POINTS).astype(int)
+            else:
+                idxs = np.arange(n)
+            pca = PCA(n_components=2)
+            coords = pca.fit_transform(emb[idxs])
+            doc_color = {d["documento"]: _DOC_PALETTE[i % len(_DOC_PALETTE)]
+                         for i, d in enumerate(doc_stats)}
+            for k, idx in enumerate(idxs):
+                m = metadata[int(idx)]
+                pca_points.append({
+                    "pca_x": float(coords[k, 0]),
+                    "pca_y": float(coords[k, 1]),
+                    "chunk_id": int(m.get("chunk_id", idx)),
+                    "documento": m.get("documento", "?"),
+                    "color": doc_color.get(m.get("documento", "?"), "#94a3b8"),
+                })
+        except Exception:
+            pca_points = []
+
+    # Color por doc (también para la tabla del front)
+    for i, d in enumerate(doc_stats):
+        d["color"] = _DOC_PALETTE[i % len(_DOC_PALETTE)]
+
+    data = {
+        "ready": True,
+        "doc_stats": doc_stats,
+        "faiss_meta": faiss_meta,
+        "pca": pca_points,
+        "vocab": vocab,
+        "totals": totals,
+    }
+    _STATS_CACHE["sig"] = sig
+    _STATS_CACHE["data"] = data
+    return data
+
+
+@app.get("/api/stats")
+def api_stats():
+    """
+    Devuelve métricas reales del índice RAG actual:
+      - doc_stats: chunks/tokens/palabras por documento
+      - faiss_meta: vectores, dimensión, tipo de índice, tamaño en disco
+      - pca: proyección 2D de los embeddings (submuestreo a ≤350 puntos)
+      - vocab: top-10 palabras del corpus (sin stopwords)
+      - totals: agregados globales
+    """
+    try:
+        return _compute_stats()
+    except Exception as e:
+        # Nunca devolvemos 500 al dashboard: preferimos un payload vacío.
+        return JSONResponse(
+            {"ready": False, "error": str(e),
+             "doc_stats": [], "faiss_meta": None, "pca": [], "vocab": [],
+             "totals": {"n_docs": 0, "n_chunks": 0, "n_tokens": 0, "n_words": 0, "avg_chunk_tokens": 0}},
+            status_code=200,
+        )
+
+
 @app.get("/api/pdfs")
 def api_list_pdfs():
     if not os.path.exists(DATA_FOLDER):
@@ -409,16 +641,22 @@ def api_ask(req: AskRequest):
                 detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}. Levanta el servidor local.",
             )
 
-    # Recuperar fragmentos
-    results = _retrieve(req.question, top_k=max(1, min(req.top_k, 15)))
+    # ── Query Rewriting + Expansion (antes del retrieval) ──
+    enhanced_query = _rewrite_and_expand_query(
+        req.question,
+        req.history if req.use_history else [],
+    )
+
+    # Recuperar fragmentos con la consulta optimizada
+    results = _retrieve(enhanced_query, top_k=max(1, min(req.top_k, 15)))
     context = _build_context(results)
 
     system_prompt = (
-        "Eres un asistente experto en regulaciones técnicas de Fórmula 1 (FIA 2026). "
-        "Respondes apoyándote ÚNICAMENTE en los fragmentos del documento que se te proporcionan. "
-        "Si la respuesta no está en el contexto, dilo claramente. "
-        "Cuando sea posible, menciona los números de fragmento que respaldan la respuesta. "
-        "Sé claro, técnico y conciso."
+        "Eres un asistente experto diseñado para responder preguntas basándose estrictamente en los documentos proporcionados. "
+        "Responde apoyándote ÚNICAMENTE en los fragmentos de texto recuperados. "
+        "Si la respuesta no se encuentra en el contexto proporcionado, dilo claramente y no intentes inventar la información. "
+        "Cuando sea posible, menciona los números de fragmento que respaldan tu respuesta. "
+        "Sé claro y conciso."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -462,6 +700,8 @@ def api_ask(req: AskRequest):
         "model": state.llm_model_name,
         "device": state.device,
         "n_sources": len(results),
+        "original_query": req.question,
+        "enhanced_query": enhanced_query,
     }
 
 
@@ -490,14 +730,14 @@ def api_ask_stream(req: AskRequest):
 
     # Construir el prompt de historial aquí (fuera del generador, en hilo sync)
     system_prompt = (
-        "Eres un asistente experto en regulaciones técnicas de Fórmula 1 (FIA 2026). "
-        "Respondes apoyándote ÚNICAMENTE en los fragmentos del documento que se te proporcionan. "
-        "Si la respuesta no está en el contexto, dilo claramente. "
-        "Cuando sea posible, menciona los números de fragmento que respaldan la respuesta. "
-        "Sé claro, técnico y conciso."
+        "Eres un asistente experto diseñado para responder preguntas basándose estrictamente en los documentos proporcionados. "
+        "Responde apoyándote ÚNICAMENTE en los fragmentos de texto recuperados. "
+        "Si la respuesta no se encuentra en el contexto proporcionado, dilo claramente y no intentes inventar la información. "
+        "Cuando sea posible, menciona los números de fragmento que respaldan tu respuesta. "
+        "Sé claro y conciso."
     )
 
-    def build_messages(context: str) -> list:
+    def build_messages(context: str, question: str) -> list:
         msgs = [{"role": "system", "content": system_prompt}]
         if req.use_history and req.history:
             hist = [
@@ -511,7 +751,7 @@ def api_ask_stream(req: AskRequest):
             for m in hist:
                 msgs.append({"role": m.role, "content": m.content})
         user_prompt = (
-            f"Pregunta:\n{req.question}\n\n"
+            f"Pregunta:\n{question}\n\n"
             f"Contexto recuperado:\n{context}\n\n"
             "Responde basándote únicamente en el contexto. Cita los fragmentos relevantes."
         )
@@ -522,10 +762,25 @@ def api_ask_stream(req: AskRequest):
         return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     def generate():
+        # ── 0. Query Rewriting + Expansion ──
+        yield sse({"type": "status", "msg": "✍ Reescribiendo y expandiendo la consulta…"})
+        try:
+            enhanced_query = _rewrite_and_expand_query(
+                req.question,
+                req.history if req.use_history else [],
+            )
+        except Exception:
+            enhanced_query = req.question
+
+        if enhanced_query and enhanced_query.strip() and enhanced_query.strip() != req.question.strip():
+            yield sse({"type": "status", "msg": f"💡 Consulta expandida: {enhanced_query}"})
+        else:
+            yield sse({"type": "status", "msg": "💡 Consulta sin cambios tras el rewriting"})
+
         # ── 1. Recuperar fragmentos ──
         yield sse({"type": "status", "msg": "🔍 Buscando en el índice FAISS…"})
 
-        results = _retrieve(req.question, top_k=max(1, min(req.top_k, 15)))
+        results = _retrieve(enhanced_query, top_k=max(1, min(req.top_k, 15)))
 
         if not results:
             yield sse({"type": "status", "msg": "⚠ Sin fragmentos relevantes encontrados."})
@@ -546,7 +801,10 @@ def api_ask_stream(req: AskRequest):
         # ── 2. Llamar al LLM con streaming ──
         yield sse({"type": "status", "msg": f"🤖 Llamando a {state.llm_model_name}…"})
 
-        messages = build_messages(context)
+        # Para la generación final usamos la pregunta original del usuario,
+        # así la respuesta del LLM se ajusta a su intención literal y no a la
+        # consulta expandida (que está pensada para el retrieval, no para el chat).
+        messages = build_messages(context, req.question)
 
         try:
             stream = state.llm_client.chat.completions.create(
@@ -564,7 +822,12 @@ def api_ask_stream(req: AskRequest):
             return
 
         # ── 3. Fin ──
-        yield sse({"type": "done", "sources": results})
+        yield sse({
+            "type": "done",
+            "sources": results,
+            "original_query": req.question,
+            "enhanced_query": enhanced_query,
+        })
 
     return StreamingResponse(
         generate(),
