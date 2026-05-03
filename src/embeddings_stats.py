@@ -18,11 +18,16 @@ from sklearn.decomposition import PCA
 # =========================
 PDF_FOLDER = "data"                  # carpeta donde tienes los PDFs
 OUTPUT_FOLDER = "output"             # carpeta de salida
-CHUNK_SIZE = 1000                    # tamaño de chunk en caracteres
+CHUNK_SIZE = 1000                    # tamaño de chunk (fallback char-based)
 CHUNK_OVERLAP = 200                  # solapamiento entre chunks
+MAX_ARTICLE_CHUNK_SIZE = 2000        # máximo de caracteres por chunk en chunking por artículos
 TOP_N_WORDS = 30                     # vocabulario más frecuente
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 BATCH_SIZE = 32
+
+# Patrones para detectar límites de artículos en los PDFs de la FIA
+_ARTICLE_RE = re.compile(r'(?m)^ARTICLE\s+(\d+)\s*[:\-.]?\s*([^\n]*)', re.IGNORECASE)
+_APPENDIX_RE = re.compile(r'(?m)^APPENDIX\s+(\d+)\s*[:\-.]?\s*([^\n]*)', re.IGNORECASE)
 
 
 # =========================
@@ -95,27 +100,176 @@ def estimate_tokens(text: str) -> int:
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
     """
-    Divide texto en chunks por caracteres con overlap.
-    Evita devolver chunks vacíos.
+    Divide texto en chunks por caracteres con overlap (fallback).
     """
     if not text or not text.strip():
         return []
-
     if overlap >= chunk_size:
         raise ValueError("CHUNK_OVERLAP debe ser menor que CHUNK_SIZE.")
-
     chunks = []
     start = 0
     text = text.strip()
-
     while start < len(text):
         end = start + chunk_size
         chunk = text[start:end].strip()
-
         if chunk:
             chunks.append(chunk)
-
         start += chunk_size - overlap
+    return chunks
+
+
+def _char_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Partición por caracteres con overlap (uso interno)."""
+    return chunk_text(text, chunk_size, overlap)
+
+
+def _split_article_into_sections(
+    article_text: str,
+    art_num: str,
+    art_title: str,
+    context_header: str,
+    max_chunk_size: int,
+    overlap: int,
+) -> list[dict]:
+    """
+    Divide un artículo largo en chunks por subsecciones (N.x, N.x.y…).
+    Si una subsección sigue siendo demasiado grande, aplica chunking por caracteres.
+    """
+    chunks = []
+    section_re = re.compile(
+        r'(?m)^(' + re.escape(art_num) + r'\.\d+(?:\.\d+)*)\s+([^\n]*)'
+    )
+    matches = list(section_re.finditer(article_text))
+
+    if not matches:
+        # Sin subsecciones detectadas: chunking por caracteres con contexto
+        for part in _char_chunks(article_text, max_chunk_size, overlap):
+            chunks.append({
+                "article_number": art_num,
+                "article_title": art_title,
+                "section": None,
+                "context": context_header,
+                "chunk_text": f"{context_header}\n{part}",
+            })
+        return chunks
+
+    # Intro del artículo (antes de la primera subsección)
+    intro = article_text[:matches[0].start()].strip()
+    if intro:
+        for part in _char_chunks(intro, max_chunk_size, overlap):
+            chunks.append({
+                "article_number": art_num,
+                "article_title": art_title,
+                "section": "intro",
+                "context": context_header,
+                "chunk_text": f"{context_header}\n{part}",
+            })
+
+    for i, match in enumerate(matches):
+        sec_num = match.group(1)
+        sec_title = match.group(2).strip()
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(article_text)
+        sec_text = article_text[start:end].strip()
+        sec_context = f"{context_header} | Section {sec_num}: {sec_title}"
+
+        if len(sec_text) <= max_chunk_size:
+            chunks.append({
+                "article_number": art_num,
+                "article_title": art_title,
+                "section": sec_num,
+                "context": sec_context,
+                "chunk_text": f"{sec_context}\n{sec_text}",
+            })
+        else:
+            for part in _char_chunks(sec_text, max_chunk_size, overlap):
+                chunks.append({
+                    "article_number": art_num,
+                    "article_title": art_title,
+                    "section": sec_num,
+                    "context": sec_context,
+                    "chunk_text": f"{sec_context}\n{part}",
+                })
+
+    return chunks
+
+
+def chunk_by_articles(
+    text: str,
+    doc_name: str = "",
+    max_chunk_size: int = 2000,
+    overlap: int = 200,
+) -> list[dict]:
+    """
+    Contextual Chunking: divide el texto respetando los límites de artículos FIA.
+
+    Jerarquía de partición:
+      1. ARTICLE N / APPENDIX N  → un bloque por artículo
+      2. Subsecciones N.x, N.x.y → un chunk por subsección si el artículo es grande
+      3. Caracteres con overlap   → fallback final si una subsección es aún muy grande
+
+    Cada chunk lleva un encabezado contextual prepend ("context_header") que el
+    modelo de embedding usará para situar el fragmento dentro del documento.
+    """
+    chunks: list[dict] = []
+
+    # Recopilar límites de artículos y apéndices ordenados por posición
+    boundaries = []
+    for m in _ARTICLE_RE.finditer(text):
+        boundaries.append((m.start(), m.group(1), m.group(2).strip(), "Article"))
+    for m in _APPENDIX_RE.finditer(text):
+        boundaries.append((m.start(), m.group(1), m.group(2).strip(), "Appendix"))
+    boundaries.sort(key=lambda x: x[0])
+
+    if not boundaries:
+        # Sin artículos detectados: chunking por caracteres con contexto genérico
+        ctx = f"[{doc_name}]" if doc_name else "[Document]"
+        for part in _char_chunks(text, max_chunk_size, overlap):
+            chunks.append({
+                "article_number": None,
+                "article_title": None,
+                "section": None,
+                "context": ctx,
+                "chunk_text": f"{ctx}\n{part}",
+            })
+        return chunks
+
+    # Preámbulo (antes del primer artículo)
+    first_pos = boundaries[0][0]
+    if first_pos > 200:
+        preamble = text[:first_pos].strip()
+        if preamble:
+            ctx = f"[{doc_name} | Preamble]"
+            for part in _char_chunks(preamble, max_chunk_size, overlap):
+                chunks.append({
+                    "article_number": "0",
+                    "article_title": "Preamble",
+                    "section": None,
+                    "context": ctx,
+                    "chunk_text": f"{ctx}\n{part}",
+                })
+
+    # Cada artículo / apéndice
+    for i, (start_pos, art_num, art_title, art_type) in enumerate(boundaries):
+        end_pos = boundaries[i + 1][0] if i + 1 < len(boundaries) else len(text)
+        article_text = text[start_pos:end_pos].strip()
+        context_header = f"[{art_type} {art_num}: {art_title}]"
+
+        if len(article_text) <= max_chunk_size:
+            chunks.append({
+                "article_number": art_num,
+                "article_title": art_title,
+                "section": None,
+                "context": context_header,
+                "chunk_text": f"{context_header}\n{article_text}",
+            })
+        else:
+            chunks.extend(
+                _split_article_into_sections(
+                    article_text, art_num, art_title,
+                    context_header, max_chunk_size, overlap,
+                )
+            )
 
     return chunks
 
@@ -235,15 +389,24 @@ def main():
         }
         documents.append(doc)
 
-        doc_chunks = chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+        doc_chunks = chunk_by_articles(
+            text,
+            doc_name=os.path.basename(pdf_path),
+            max_chunk_size=MAX_ARTICLE_CHUNK_SIZE,
+            overlap=CHUNK_OVERLAP,
+        )
 
-        for i, chunk in enumerate(doc_chunks):
+        for i, c in enumerate(doc_chunks):
             all_chunks.append(
                 {
                     "documento": os.path.basename(pdf_path),
                     "chunk_id": i,
-                    "chunk_text": chunk,
-                    "chunk_len": len(chunk),
+                    "chunk_text": c["chunk_text"],
+                    "chunk_len": len(c["chunk_text"]),
+                    "article_number": c.get("article_number"),
+                    "article_title": c.get("article_title"),
+                    "section": c.get("section"),
+                    "context": c.get("context"),
                 }
             )
 
