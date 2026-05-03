@@ -12,9 +12,10 @@ function F1Loader({ label = "Pensando…" }) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 fade-in">
       <div className="f1-track">
+        <div className="f1-core" />
         <div className="f1-orbit">
           <div className="f1-trail" />
-          <div className="f1-car">🏎️</div>
+          <div className="f1-car" />
         </div>
       </div>
       <div className="text-xs uppercase tracking-[0.3em] text-white/60">{label}</div>
@@ -205,7 +206,14 @@ function SourceCard({ s, idx }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] transition p-3 fade-in">
       <div className="flex items-start gap-2">
-        <div className="shrink-0 w-7 h-7 rounded-lg bg-red-600/20 border border-red-500/30 grid place-items-center text-[11px] font-semibold text-red-300">
+        <div
+          className="shrink-0 w-7 h-7 rounded-lg grid place-items-center text-[11px] font-semibold"
+          style={{
+            background: "var(--accent-bg20)",
+            border:     "1px solid var(--accent-border)",
+            color:      "var(--accent-text)",
+          }}
+        >
           {idx + 1}
         </div>
         <div className="min-w-0 flex-1">
@@ -317,7 +325,9 @@ function Bubble({ m }) {
                 className="w-5 h-5 rounded-md grid place-items-center"
                 style={{ background: "var(--accent-bg10)", border: "1px solid var(--accent-border)" }}
               >
-                <span className="text-[10px]">🏁</span>
+                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent-text)" }}>
+                  <path d="M12 3 L13.8 9.2 L20 11 L13.8 12.8 L12 19 L10.2 12.8 L4 11 L10.2 9.2 Z" />
+                </svg>
               </div>
               <span className="text-[10.5px] uppercase tracking-[0.22em] text-white/45">Asistente</span>
               {m.streaming && (

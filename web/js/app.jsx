@@ -395,20 +395,30 @@ function App() {
   return (
     <div className="relative w-screen h-screen overflow-hidden text-white" data-theme={settings.theme}>
 
-      {/* Vídeo de fondo */}
-      <video autoPlay loop muted playsInline
-        className="absolute inset-0 w-full h-full object-cover z-0">
-        <source
-          src="https://res.cloudinary.com/dfonotyfb/video/upload/v1775585556/dds3_1_rqhg7x.mp4"
-          type="video/mp4"
-        />
-      </video>
-      <div className="absolute inset-0 z-10 bg-black/60 pointer-events-none" />
-      <div className="absolute inset-0 z-10 pointer-events-none"
-        style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 65%, rgba(0,0,0,0.95) 100%)" }}
+      {/* Fondo: malla cromática con tema activo */}
+      <div className="absolute inset-0 z-0 bg-[#050505]" />
+      <div className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          background: `
+            radial-gradient(ellipse 60% 50% at 18% 20%, var(--accent-bg20) 0%, transparent 60%),
+            radial-gradient(ellipse 70% 60% at 82% 85%, var(--accent-bg10) 0%, transparent 65%),
+            radial-gradient(ellipse 40% 35% at 50% 50%, rgba(255,255,255,0.025) 0%, transparent 70%)
+          `,
+        }}
       />
-      <div className="absolute inset-0 z-10 pointer-events-none mix-blend-overlay opacity-50"
-        style={{ background: "linear-gradient(180deg, rgba(220,38,38,0.10) 0%, transparent 35%, rgba(250,204,21,0.04) 100%)" }}
+      {/* Grid sutil */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.035]"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)
+          `,
+          backgroundSize: "44px 44px",
+        }}
+      />
+      {/* Viñeta + glow superior */}
+      <div className="absolute inset-0 z-10 pointer-events-none"
+        style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.92) 100%)" }}
       />
 
       {/* ── Layout ── */}
@@ -469,7 +479,7 @@ function App() {
             <div className="flex-1 min-w-0">
               <div className="text-[9.5px] uppercase tracking-[0.32em] text-white/30">
                 {tab === "chat"  ? "Conversación activa"
-                 : tab === "rag" ? "Pit lane · Gestor RAG"
+                 : tab === "rag" ? "Documentos · Gestor RAG"
                  : "Análisis · Índice FAISS"}
               </div>
               <div className="text-[14px] font-semibold truncate leading-tight">

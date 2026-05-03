@@ -99,7 +99,7 @@ function RagView({ status, rebuilding, uploading, ragErr, ragOk,
 
             {rebuilding && (
               <div className="mt-5">
-                <F1Loader label="Indexando vuelta tras vuelta…" />
+                <F1Loader label="Indexando documentos…" />
               </div>
             )}
             {ragOk && (

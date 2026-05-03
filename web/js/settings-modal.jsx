@@ -5,11 +5,13 @@
 const { useState: _useStateS, useEffect: _useEffectS } = React;
 
 const THEMES = [
-  { id: "red",     label: "F1 Rojo",    from: "#dc2626", to: "#991b1b" },
-  { id: "blue",    label: "Titán Azul", from: "#0284c7", to: "#075985" },
-  { id: "violet",  label: "Violeta",    from: "#7c3aed", to: "#4c1d95" },
-  { id: "emerald", label: "Esmeralda",  from: "#059669", to: "#064e3b" },
-  { id: "amber",   label: "Ámbar",      from: "#d97706", to: "#92400e" },
+  { id: "red",     label: "Carmesí",    from: "#ef4444", to: "#7f1d1d" },
+  { id: "blue",    label: "Cobalto",    from: "#0ea5e9", to: "#0c4a6e" },
+  { id: "violet",  label: "Aurora",     from: "#a855f7", to: "#3b0764" },
+  { id: "emerald", label: "Toxic",      from: "#10b981", to: "#022c22" },
+  { id: "amber",   label: "Magma",      from: "#f59e0b", to: "#7c2d12" },
+  { id: "magenta", label: "Neón Rosa",  from: "#ec4899", to: "#500724" },
+  { id: "cyber",   label: "Cyber Lima", from: "#a3e635", to: "#0e7490" },
   { id: "white",   label: "Platino",    from: "#f1f5f9", to: "#94a3b8", dark: true },
 ];
 
@@ -61,8 +63,14 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-red-500/15 border border-red-500/25 grid place-items-center">
-              <Icon.Cog className="w-4.5 h-4.5 text-red-300" style={{width:18,height:18}} />
+            <div
+              className="w-9 h-9 rounded-xl grid place-items-center"
+              style={{
+                background:  "var(--accent-bg20)",
+                border:      "1px solid var(--accent-border)",
+              }}
+            >
+              <Icon.Cog className="w-4.5 h-4.5" style={{ width: 18, height: 18, color: "var(--accent-text)" }} />
             </div>
             <div>
               <div className="text-[15px] font-semibold">Ajustes del modelo</div>

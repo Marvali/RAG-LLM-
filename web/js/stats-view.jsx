@@ -112,7 +112,7 @@ function ScatterTip({ active, payload }) {
   const shortDoc = String(d.documento || "").replace(/\.pdf$/i, "").slice(0, 35);
   return (
     <div className="rounded-xl bg-black/85 border border-white/15 px-3 py-2 text-[11.5px] font-mono shadow-2xl">
-      <div className="text-white/80">chunk <span className="text-red-300">#{d.chunk_id}</span></div>
+      <div className="text-white/80">chunk <span style={{ color: "var(--accent-text)" }}>#{d.chunk_id}</span></div>
       <div className="text-white/50 mt-0.5 truncate max-w-[200px]">{shortDoc}…</div>
       <div className="text-white/35 mt-0.5">
         x: {Number(d.pca_x).toFixed(3)} · y: {Number(d.pca_y).toFixed(3)}
@@ -127,7 +127,7 @@ function BarTip({ active, payload }) {
   return (
     <div className="rounded-xl bg-black/85 border border-white/15 px-3 py-2 text-[11.5px] font-mono shadow-2xl">
       <div className="text-white/80">{payload[0].payload.word}</div>
-      <div className="text-red-300 font-semibold">{v.toLocaleString()} ocurrencias</div>
+      <div className="font-semibold" style={{ color: "var(--accent-text)" }}>{v.toLocaleString()} ocurrencias</div>
     </div>
   );
 }
@@ -153,6 +153,27 @@ function StatsView() {
   }
 
   _useEffectSV(() => { load(); }, []);
+
+  /* ── Datos derivados (siempre calculados — antes de los early returns
+        para no violar las Rules of Hooks de React) ── */
+  const docStats   = data?.doc_stats || [];
+  const totals     = data?.totals    || { n_docs: 0, n_chunks: 0, n_tokens: 0, n_words: 0, avg_chunk_tokens: 0 };
+  const faissMeta  = data?.faiss_meta;
+  const vocab      = (data?.vocab || []).slice().sort((a, b) => b.count - a.count);
+  const pcaPoints  = data?.pca || [];
+
+  const scatterGroups = _useMemoSV(() => {
+    const byDoc = new Map();
+    for (const p of pcaPoints) {
+      if (!byDoc.has(p.documento)) byDoc.set(p.documento, []);
+      byDoc.get(p.documento).push(p);
+    }
+    return Array.from(byDoc.entries()).map(([doc, points]) => ({
+      doc,
+      color: points[0]?.color || "#94a3b8",
+      data: points,
+    }));
+  }, [pcaPoints]);
 
   /* ── Estados especiales ── */
   if (loading) {
@@ -183,33 +204,12 @@ function StatsView() {
       <div className="h-full grid place-items-center px-6">
         <div className="max-w-md text-center text-[12.5px] text-white/55 leading-relaxed">
           Aún no hay un índice RAG generado.<br/>
-          Ve a la pestaña <strong>Pit lane</strong>, sube algún PDF y pulsa <strong>“Regenerar RAG”</strong>;
+          Ve a la pestaña <strong>Documentos</strong>, sube algún PDF y pulsa <strong>“Regenerar RAG”</strong>;
           luego vuelve aquí para ver el dashboard con datos reales.
         </div>
       </div>
     );
   }
-
-  /* ── Datos reales ── */
-  const docStats   = data.doc_stats || [];
-  const totals     = data.totals    || { n_docs: 0, n_chunks: 0, n_tokens: 0, n_words: 0, avg_chunk_tokens: 0 };
-  const faissMeta  = data.faiss_meta;
-  const vocab      = (data.vocab || []).slice().sort((a, b) => b.count - a.count);
-  const pcaPoints  = data.pca || [];
-
-  /* Grupos de scatter por documento */
-  const scatterGroups = _useMemoSV(() => {
-    const byDoc = new Map();
-    for (const p of pcaPoints) {
-      if (!byDoc.has(p.documento)) byDoc.set(p.documento, []);
-      byDoc.get(p.documento).push(p);
-    }
-    return Array.from(byDoc.entries()).map(([doc, points]) => ({
-      doc,
-      color: points[0]?.color || "#94a3b8",
-      data: points,
-    }));
-  }, [pcaPoints]);
 
   return (
     <div className="h-full overflow-y-auto nice-scroll px-4 py-5 md:px-8 md:py-6">
@@ -261,7 +261,7 @@ function StatsView() {
             title="Mapa Semántico del FAISS"
             subtitle={
               pcaPoints.length
-                ? `Proyección PCA 2D · ${pcaPoints.length} chunk(s) muestreado(s)`
+                ? `Proyección PCA 2D · ${pcaPoints.length} chunk(s) mostrado(s)`
                 : "PCA no disponible (regenera el índice para producir embeddings.npy)"
             }
             className="lg:col-span-2"
@@ -375,7 +375,9 @@ function StatsView() {
                     <Tooltip content={<BarTip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
                     <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                       {vocab.map((_, i) => (
-                        <Cell key={i} fill={`rgba(239, 68, 68, ${Math.max(0.3, 1 - i * 0.072)})`} />
+                        <Cell key={i}
+                          fill={getComputedStyle(document.documentElement).getPropertyValue('--accent-mid').trim() || '#ef4444'}
+                          fillOpacity={Math.max(0.3, 1 - i * 0.072)} />
                       ))}
                       <LabelList dataKey="count" position="right"
                         formatter={(v) => Number(v).toLocaleString()}
