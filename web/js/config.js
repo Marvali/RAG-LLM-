@@ -12,5 +12,5 @@ const MAX_CHATS       = 5;
 // Mensaje de bienvenida por defecto
 const WELCOME_MSG = {
   role: "assistant",
-  content: "Bienvenido al **Agentic RAG · F1 2026**. Pregúntame sobre el reglamento técnico, deportivo, financiero u operacional. Responderé citando los fragmentos del documento.",
+  content: "Bienvenido al **Agentic RAG**. Sube tus PDFs en la pestaña de Documentos, regenera el índice y pregúntame sobre su contenido. Responderé en tu idioma citando los fragmentos relevantes.",
 };

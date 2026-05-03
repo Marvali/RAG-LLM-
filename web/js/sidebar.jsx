@@ -16,14 +16,17 @@ function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteCha
       <div className="px-4 py-3.5 border-b border-white/[0.07]">
         <div className="flex items-center gap-3">
           <div
-            className="w-9 h-9 rounded-xl grid place-items-center glow-accent shrink-0"
+            className="w-9 h-9 rounded-xl grid place-items-center glow-accent shrink-0 relative overflow-hidden"
             style={{ background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))" }}
           >
-            <span className="text-base">🏁</span>
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white relative z-10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2 L4 6 v6 c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10 V6 z" />
+              <path d="M9 12 l2 2 4-4" />
+            </svg>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[9.5px] uppercase tracking-[0.32em] text-white/35">Agentic RAG</div>
-            <div className="text-[14px] font-semibold leading-tight">F1 2026</div>
+            <div className="text-[9.5px] uppercase tracking-[0.32em] text-white/35">Agentic</div>
+            <div className="text-[14px] font-semibold leading-tight">RAG Studio</div>
           </div>
           {/* Botón colapsar sidebar (solo desktop) */}
           <button
@@ -40,9 +43,9 @@ function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteCha
       <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.07]">
         <div className="grid grid-cols-3 gap-1.5">
           {[
-            { id: "chat",  label: "Chat",  IconC: Icon.Chat },
-            { id: "rag",   label: "RAG",   IconC: Icon.Layers },
-            { id: "stats", label: "Stats", emoji: "📊" },
+            { id: "chat",  label: "Chat",       IconC: Icon.Chat },
+            { id: "rag",   label: "Documentos", IconC: Icon.Layers },
+            { id: "stats", label: "Análisis",   emoji: "📊" },
           ].map(({ id, label, IconC, emoji }) => (
             <button
               key={id}
@@ -71,7 +74,19 @@ function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteCha
       <div className="px-2.5 pt-2.5">
         <button
           onClick={onNewChat}
-          className="w-full py-2 px-3 rounded-xl border border-dashed border-white/20 hover:border-red-400/40 hover:bg-red-500/[0.06] text-[12.5px] text-white/55 hover:text-white/90 transition flex items-center justify-center gap-2"
+          className="w-full py-2 px-3 rounded-xl border border-dashed border-white/20 text-[12.5px] text-white/55 hover:text-white/95 transition flex items-center justify-center gap-2"
+          style={{
+            "--hover-border": "var(--accent-border)",
+            "--hover-bg":     "var(--accent-bg10)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--accent-border)";
+            e.currentTarget.style.background  = "var(--accent-bg10)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "";
+            e.currentTarget.style.background  = "";
+          }}
         >
           <Icon.Plus className="w-3.5 h-3.5" />
           Nueva conversación
@@ -96,16 +111,18 @@ function ChatSidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteCha
                 onClick={() => onSelectChat(chat.id)}
                 className={cls(
                   "group relative rounded-xl px-3 py-2.5 cursor-pointer transition slide-in",
-                  isActive
-                    ? "bg-red-500/[0.12] border border-red-500/20"
-                    : "hover:bg-white/[0.04] border border-transparent hover:border-white/[0.06]"
+                  !isActive && "hover:bg-white/[0.04] border border-transparent hover:border-white/[0.06]"
                 )}
+                style={isActive ? {
+                  background:  "var(--accent-bg10)",
+                  border:      "1px solid var(--accent-border)",
+                } : undefined}
               >
                 <div className="flex items-start gap-2">
-                  <Icon.Chat className={cls(
-                    "w-3.5 h-3.5 mt-0.5 shrink-0 transition",
-                    isActive ? "text-red-300" : "text-white/30"
-                  )} />
+                  <Icon.Chat
+                    className="w-3.5 h-3.5 mt-0.5 shrink-0 transition"
+                    style={isActive ? { color: "var(--accent-text)" } : { color: "rgba(255,255,255,0.3)" }}
+                  />
 
                   <div className="min-w-0 flex-1">
                     <div className={cls(

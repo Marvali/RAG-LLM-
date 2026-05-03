@@ -232,7 +232,7 @@ function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, c
               placeholder={
                 listening
                   ? "🎙️ Escuchando… habla ahora"
-                  : "Pregunta sobre el reglamento F1 2026… (Enter para enviar)"
+                  : "Pregunta sobre tus documentos… (Enter para enviar)"
               }
               className="flex-1 resize-none bg-transparent outline-none px-3 py-2.5 text-[14px] placeholder-white/35 max-h-40 nice-scroll"
               style={{ minHeight: 42 }}
