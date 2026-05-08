@@ -185,9 +185,21 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
           {/* Info backend (solo lectura) */}
           {status && (
             <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5 font-mono text-[11.5px]">
-              <div>
-                <span className="text-white/35">LLM: </span>
-                <span className="text-white/70">{status.llm_model || "—"}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-white/35">🖥 Local:</span>
+                <span className={status.llm_connected ? "text-emerald-300/80" : "text-red-300/70"}>
+                  {status.llm_connected ? "●" : "○"}
+                </span>
+                <span className="text-white/60 truncate">{status.llm_model || "—"}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-white/35">⚡ Groq:</span>
+                <span className={status.groq_connected ? "text-emerald-300/80" : "text-amber-300/60"}>
+                  {status.groq_connected ? "●" : "○"}
+                </span>
+                <span className="text-white/60 truncate">
+                  {status.groq_connected ? status.groq_model : "GROQ_API_KEY no configurada"}
+                </span>
               </div>
               <div>
                 <span className="text-white/35">embedding: </span>
@@ -196,10 +208,6 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
               <div>
                 <span className="text-white/35">device: </span>
                 <span className="text-white/70">{(status.device || "—").toUpperCase()}</span>
-              </div>
-              <div className="break-all">
-                <span className="text-white/35">lm_studio: </span>
-                <span className="text-white/70">{status.lm_studio_url || "—"}</span>
               </div>
               {status.last_error && (
                 <div className="text-red-300/80 break-words">
