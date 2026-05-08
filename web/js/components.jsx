@@ -37,7 +37,7 @@ function F1Loader({ label = "Pensando…" }) {
      inThinking   — boolean    true = aún dentro de <think> (streaming)
      done         — boolean    true = respuesta completada
 ───────────────────────────────────────── */
-function ThinkingConsole({ log, thinkContent, inThinking, done }) {
+function ThinkingConsole({ log, thinkContent, inThinking, done, mode = "rag" }) {
   const [collapsed,      setCollapsed]      = _useState(false);
   const [thinkCollapsed, setThinkCollapsed] = _useState(false);
   const bottomRef     = _useRef(null);
@@ -93,7 +93,7 @@ function ThinkingConsole({ log, thinkContent, inThinking, done }) {
           {consoleStatus === "running" && (
             <span className="flex items-center gap-1 text-yellow-400/70">
               <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-              RAG
+              {mode === "agent" ? "agente" : "RAG"}
             </span>
           )}
           {consoleStatus === "thinking" && (
@@ -117,7 +117,7 @@ function ThinkingConsole({ log, thinkContent, inThinking, done }) {
               <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/65" />
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/65" />
               <span className="ml-2 text-[10px] text-white/22 font-mono tracking-wide">
-                rag-pipeline
+                {mode === "agent" ? "agent-loop" : "rag-pipeline"}
               </span>
               <span className={cls("ml-auto text-[9.5px] font-mono", statusColors[consoleStatus],
                 consoleStatus !== "done" && "animate-pulse")}>
