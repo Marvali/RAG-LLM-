@@ -15,7 +15,7 @@ const {
   useState: _useStateCV,
 } = React;
 
-function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, chatErr }) {
+function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, chatErr, chatMode = "rag", setChatMode }) {
   const scrollRef      = _useRefCV(null);
   const recognitionRef = _useRefCV(null);
   const [listening,    setListening]    = _useStateCV(false);
@@ -123,6 +123,7 @@ function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, c
                 thinkContent={streamingMsg.thinkContent || ""}
                 inThinking={!!streamingMsg.inThinking}
                 done={streamingMsg.done}
+                mode={chatMode}
               />
 
               {/*
@@ -232,7 +233,9 @@ function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, c
               placeholder={
                 listening
                   ? "🎙️ Escuchando… habla ahora"
-                  : "Pregunta sobre tus documentos… (Enter para enviar)"
+                  : chatMode === "agent"
+                    ? "Pregunta al agente (decide cuándo buscar)… (Enter para enviar)"
+                    : "Pregunta sobre tus documentos… (Enter para enviar)"
               }
               className="flex-1 resize-none bg-transparent outline-none px-3 py-2.5 text-[14px] placeholder-white/35 max-h-40 nice-scroll"
               style={{ minHeight: 42 }}
@@ -260,17 +263,49 @@ function ChatView({ messages, streamingMsg, thinking, input, setInput, onSend, c
             </button>
           </div>
 
-          {/* Barra inferior: info + indicador de voz */}
-          <div className="px-3 pb-1 pt-0.5 flex items-center justify-between text-[10.5px] text-white/30">
-            {listening ? (
-              <span className="flex items-center gap-1.5" style={{ color: "var(--accent-text)" }}>
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--accent-from)" }} />
-                Grabando — pulsa el micrófono o espera para terminar
+          {/* Barra inferior: modo + info + indicador de voz */}
+          <div className="px-3 pb-1 pt-0.5 flex items-center justify-between text-[10.5px] text-white/30 gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {/* Badge de modo activo */}
+              <span
+                className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9.5px] font-semibold uppercase tracking-[0.15em] border"
+                style={chatMode === "agent" ? {
+                  color:       "var(--accent-text)",
+                  borderColor: "var(--accent-border)",
+                  background:  "var(--accent-bg10)",
+                } : {
+                  color:       "rgba(255,255,255,0.35)",
+                  borderColor: "rgba(255,255,255,0.10)",
+                  background:  "transparent",
+                }}
+              >
+                {chatMode === "agent" ? (
+                  <>
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 3 L13.8 9.2 L20 11 L13.8 12.8 L12 19 L10.2 12.8 L4 11 L10.2 9.2 Z"/>
+                    </svg>
+                    Agente
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    RAG
+                  </>
+                )}
               </span>
-            ) : (
-              <span>Shift+Enter para nueva línea{micSupported ? " · 🎙️ micrófono disponible" : ""}</span>
-            )}
-            <span className="font-mono">{input.length} ch</span>
+
+              {listening ? (
+                <span className="flex items-center gap-1.5" style={{ color: "var(--accent-text)" }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--accent-from)" }} />
+                  Grabando — pulsa el micrófono o espera para terminar
+                </span>
+              ) : (
+                <span className="truncate">Shift+Enter para nueva línea{micSupported ? " · 🎙️ mic" : ""}</span>
+              )}
+            </div>
+            <span className="font-mono shrink-0">{input.length} ch</span>
           </div>
         </div>
       </div>

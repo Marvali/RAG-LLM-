@@ -7,7 +7,9 @@ Endpoints:
     POST   /api/upload         -> Sube uno o varios PDFs a data/
     DELETE /api/pdfs/{name}    -> Borra un PDF de data/
     POST   /api/rebuild        -> Regenera embeddings + índice FAISS
-    POST   /api/ask            -> Pregunta al RAG (chunks + LLM)
+    POST   /api/ask            -> Pregunta al RAG (chunks + LLM, pipeline clásica)
+    POST   /api/ask/stream     -> Igual con streaming SSE
+    POST   /api/ask/agent      -> Agente con function calling (decide cuándo buscar)
     GET    /                   -> Sirve la UI estática (web/index.html)
 
 Arranque:
@@ -75,6 +77,7 @@ MAX_CHUNK_CHARS_PER_RESULT = 1200
 sys.path.insert(0, ROOT_DIR)
 from src import embeddings_stats as es_mod  # noqa: E402
 from src import build_faiss_index as bfi_mod  # noqa: E402
+from src.agent_llm import TOOLS as AGENT_TOOLS, SYSTEM_PROMPT as AGENT_SYSTEM_PROMPT, _dispatch as _agent_dispatch  # noqa: E402
 
 
 # =========================
@@ -384,6 +387,12 @@ class AskRequest(BaseModel):
     temperature: float = 0.2
     history: list[ChatMessage] = []
     use_history: bool = True
+
+
+class AgentAskRequest(BaseModel):
+    question: str
+    temperature: float = 0.2
+    max_iterations: int = 6
 
 
 # =========================
@@ -852,6 +861,103 @@ def api_ask_stream(req: AskRequest):
             "Connection":       "keep-alive",
         },
     )
+
+
+@app.post("/api/ask/agent")
+def api_ask_agent(req: AgentAskRequest):
+    """
+    Agente RAG con function calling.
+
+    El LLM decide de forma autónoma si buscar en documentos, calcular,
+    consultar la fecha/hora o examinar el índice.  Devuelve la respuesta
+    final junto con un log de las herramientas invocadas.
+    """
+    if state.index is None or not state.metadata:
+        raise HTTPException(
+            status_code=400,
+            detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'.",
+        )
+    if state.llm_client is None:
+        state.connect_llm()
+        if state.llm_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}.",
+            )
+
+    # Estado compatible con las herramientas de agent_llm
+    agent_state = {
+        "index": state.index,
+        "metadata": state.metadata,
+        "embedding_model": state.embedding_model,
+    }
+
+    messages = [
+        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        {"role": "user",   "content": req.question},
+    ]
+    tool_calls_log: list[dict] = []
+
+    for iteration in range(1, req.max_iterations + 1):
+        try:
+            response = state.llm_client.chat.completions.create(
+                model=state.llm_model_name,
+                temperature=float(req.temperature),
+                messages=messages,
+                tools=AGENT_TOOLS,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Error llamando al LLM: {e}")
+
+        choice = response.choices[0]
+        msg = choice.message
+        finish_reason = choice.finish_reason
+
+        if finish_reason == "stop" or not msg.tool_calls:
+            return {
+                "answer": msg.content or "",
+                "tool_calls_log": tool_calls_log,
+                "iterations_used": iteration,
+                "model": state.llm_model_name,
+                "device": state.device,
+            }
+
+        messages.append(msg)
+
+        for tc in msg.tool_calls:
+            fn_name = tc.function.name
+            try:
+                fn_args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
+
+            raw_result = _agent_dispatch(fn_name, fn_args, agent_state)
+            try:
+                parsed_result = json.loads(raw_result)
+            except Exception:
+                parsed_result = {"raw": raw_result}
+
+            tool_calls_log.append({
+                "iteration": iteration,
+                "tool": fn_name,
+                "args": fn_args,
+                "result": parsed_result,
+            })
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": raw_result,
+            })
+
+    return {
+        "answer": "El agente alcanzó el límite de iteraciones sin producir una respuesta.",
+        "tool_calls_log": tool_calls_log,
+        "iterations_used": req.max_iterations,
+        "model": state.llm_model_name,
+        "device": state.device,
+    }
 
 
 # =========================

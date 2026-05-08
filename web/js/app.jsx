@@ -27,6 +27,9 @@ function App() {
   /* ── Tab activo ── */
   const [tab, setTab] = _useStateApp("chat");
 
+  /* ── Modo de chat: "rag" | "agent" ── */
+  const [chatMode, setChatMode] = _useStateApp("rag");
+
   /* ── Estado del backend ── */
   const [status,    setStatus]    = _useStateApp(null);
   const [statusErr, setStatusErr] = _useStateApp(null);
@@ -179,6 +182,12 @@ function App() {
     };
     setStreamingMsg({ log: [], thinkContent: "", answer: "", inThinking: false, done: false });
 
+    // Rama: modo agente (POST /api/ask/agent, no SSE)
+    if (chatMode === "agent") {
+      await handleSendAgent(q, chatId, updatedMsgs);
+      return;
+    }
+
     const payload = {
       question:    q,
       top_k:       settings.topK,
@@ -250,6 +259,131 @@ function App() {
     }
 
     // La función termina; el estado final se gestiona en handleSSEEvent('done')
+  }
+
+  /* ── Agente con function calling ── */
+  async function handleSendAgent(q, chatId, updatedMsgs) {
+    const buf = streamBufRef.current;
+    buf.log.push("🤖 Agente RAG — iniciando bucle de razonamiento…");
+    scheduleRender();
+
+    try {
+      buf.log.push("> Esperando respuesta del agente…");
+      scheduleRender();
+
+      const result = await apiPost("/api/ask/agent", {
+        question:       q,
+        temperature:    settings.temperature,
+        max_iterations: 6,
+      });
+
+      // Construir log desde tool_calls_log
+      const log = [`🤖 Agente · ${result.iterations_used} iter · ${result.model || "—"}`];
+      const extractedSources = [];
+      const seenChunks = new Set();
+
+      for (const tc of result.tool_calls_log || []) {
+        if (tc.tool === "search_documents") {
+          log.push(
+            `> [iter ${tc.iteration}] 🔍 search("${shortName(tc.args.query, 46)}"` +
+            `, top_k=${tc.args.top_k || 5})`
+          );
+          for (const chunk of tc.result.results || []) {
+            log.push(
+              `  [${chunk.rank}] ${shortName(chunk.documento, 28)}` +
+              ` · #${chunk.chunk_id} · ${(chunk.score * 100).toFixed(1)}%`
+            );
+            const key = `${chunk.documento}-${chunk.chunk_id}`;
+            if (!seenChunks.has(key)) {
+              seenChunks.add(key);
+              extractedSources.push({
+                score:      chunk.score,
+                documento:  chunk.documento,
+                chunk_id:   chunk.chunk_id,
+                chunk_text: chunk.text || "",
+                chunk_len:  chunk.chunk_len || 0,
+              });
+            }
+          }
+        } else if (tc.tool === "calculate") {
+          const res = tc.result.error
+            ? `ERROR: ${tc.result.error}`
+            : `= ${tc.result.result_formatted}`;
+          log.push(`> [iter ${tc.iteration}] 🧮 calc(${tc.args.expression}) ${res}`);
+        } else if (tc.tool === "get_current_datetime") {
+          log.push(`> [iter ${tc.iteration}] 🕐 datetime → ${tc.result.datetime_utc || "—"}`);
+        } else if (tc.tool === "get_index_info") {
+          const nDocs = (tc.result.documents || []).length;
+          log.push(
+            `> [iter ${tc.iteration}] 📚 index_info →` +
+            ` ${tc.result.total_fragments || 0} frags, ${nDocs} docs`
+          );
+        } else {
+          log.push(
+            `> [iter ${tc.iteration}] 🔧 ${tc.tool}` +
+            `(${JSON.stringify(tc.args).slice(0, 60)})`
+          );
+        }
+      }
+      log.push("> ✓ Respuesta generada");
+
+      const answer  = result.answer || "";
+      const parsed  = parseThinkingProcess(answer);
+
+      streamBufRef.current = {
+        log,
+        rawAnswer:    answer,
+        thinkContent: parsed.thoughtProcess,
+        answer:       parsed.finalAnswer,
+        inThinking:   false,
+        done:         true,
+      };
+      scheduleRender();
+      setSources(extractedSources);
+
+      const finalAnswer = parsed.finalAnswer || answer;
+      setChats(prev => {
+        const chat = prev.find(c => c.id === chatId);
+        if (!chat) return prev;
+        const finalMsgs = [...chat.messages, { role: "assistant", content: finalAnswer }];
+        const updated   = prev.map(c =>
+          c.id === chatId
+            ? { ...c, messages: finalMsgs, title: getChatTitle(finalMsgs),
+                summary: getChatSummary(finalMsgs), updatedAt: Date.now() }
+            : c
+        );
+        const active = updated.find(c => c.id === chatId);
+        const rest   = updated.filter(c => c.id !== chatId);
+        const sorted = [active, ...rest].filter(Boolean).slice(0, MAX_CHATS);
+        saveChats(sorted);
+        return sorted;
+      });
+
+      setThinking(false);
+      setTimeout(() => setStreamingMsg(null), 1500);
+
+    } catch (e) {
+      const msg = String(e.message || e);
+      setChatErr(msg);
+      streamBufRef.current.log.push(`✗ ${msg}`);
+      streamBufRef.current.done = true;
+      scheduleRender();
+
+      setChats(prev => {
+        const chat = prev.find(c => c.id === chatId);
+        if (!chat) return prev;
+        const errMsgs = [
+          ...chat.messages,
+          { role: "assistant", content: `⚠️ Error en el agente.\n\n\`\`\`\n${msg}\n\`\`\`` },
+        ];
+        return prev.map(c =>
+          c.id === chatId ? { ...c, messages: errMsgs, updatedAt: Date.now() } : c
+        );
+      });
+
+      setThinking(false);
+      setTimeout(() => setStreamingMsg(null), 3000);
+    }
   }
 
   function handleSSEEvent(event) {
@@ -489,6 +623,50 @@ function App() {
               </div>
             </div>
 
+            {/* ── Selector de modo RAG / Agente ── */}
+            {tab === "chat" && (
+              <div className="flex items-center shrink-0 rounded-lg border border-white/10 bg-white/[0.04] p-0.5 gap-0.5">
+                <button
+                  onClick={() => !thinking && setChatMode("rag")}
+                  disabled={thinking}
+                  title="Modo RAG clásico: búsqueda + LLM directa"
+                  className={cls(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition",
+                    chatMode === "rag" ? "text-white" : "text-white/40 hover:text-white/65",
+                    thinking && "cursor-not-allowed opacity-50"
+                  )}
+                  style={chatMode === "rag" ? {
+                    background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))",
+                    boxShadow:  "0 2px 8px -2px var(--accent-glow)",
+                  } : undefined}
+                >
+                  <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  RAG
+                </button>
+                <button
+                  onClick={() => !thinking && setChatMode("agent")}
+                  disabled={thinking}
+                  title="Modo Agente: function calling, decide cuándo buscar"
+                  className={cls(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition",
+                    chatMode === "agent" ? "text-white" : "text-white/40 hover:text-white/65",
+                    thinking && "cursor-not-allowed opacity-50"
+                  )}
+                  style={chatMode === "agent" ? {
+                    background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))",
+                    boxShadow:  "0 2px 8px -2px var(--accent-glow)",
+                  } : undefined}
+                >
+                  <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3 L13.8 9.2 L20 11 L13.8 12.8 L12 19 L10.2 12.8 L4 11 L10.2 9.2 Z"/>
+                  </svg>
+                  Agente
+                </button>
+              </div>
+            )}
+
             {tab === "chat" && sources.length > 0 && (
               <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-300/80 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-2.5 py-1 shrink-0">
                 <Icon.Spark className="w-3 h-3" />
@@ -538,6 +716,8 @@ function App() {
                     setInput={setInput}
                     onSend={handleSend}
                     chatErr={chatErr}
+                    chatMode={chatMode}
+                    setChatMode={setChatMode}
                   />
                 </div>
 
