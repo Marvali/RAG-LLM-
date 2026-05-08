@@ -4,4 +4,3 @@ output/faiss_index.bin
 output/faiss_metadata.json
 src/__pycache__/api.cpython-310.pyc
 src/api.py
-.env

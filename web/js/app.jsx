@@ -15,7 +15,6 @@ function App() {
       topK:        s.topK        ?? 5,
       useHistory:  s.useHistory  ?? true,
       theme:       s.theme       ?? "red",
-      provider:    s.provider    ?? "local",
     };
   });
   const [settingsOpen, setSettingsOpen] = _useStateApp(false);
@@ -185,7 +184,6 @@ function App() {
       top_k:       settings.topK,
       temperature: settings.temperature,
       use_history: settings.useHistory,
-      provider:    settings.provider ?? "local",
       history: historyMsgs.filter(m => m.role === "user" || m.role === "assistant"),
     };
     if (currentChat.summary) payload.context_summary = currentChat.summary;
@@ -512,42 +510,10 @@ function App() {
               </button>
             )}
 
-            {/* Provider toggle — visible siempre en chat */}
-            {tab === "chat" && (
-              <div className="flex items-center rounded-lg border border-white/10 bg-white/[0.03] p-0.5 gap-0.5 shrink-0">
-                {[
-                  { val: "local", label: "Local",      icon: "🖥" },
-                  { val: "groq",  label: "Groq Cloud",  icon: "⚡" },
-                ].map(opt => (
-                  <button
-                    key={opt.val}
-                    onClick={() => handleSaveSettings({ ...settings, provider: opt.val })}
-                    title={opt.val === "local" ? "LLM Local (LM Studio)" : "Groq Cloud API"}
-                    className={cls(
-                      "flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-200",
-                      settings.provider === opt.val
-                        ? "text-white"
-                        : "text-white/35 hover:text-white/60 hover:bg-white/[0.05]"
-                    )}
-                    style={settings.provider === opt.val ? {
-                      background: "linear-gradient(135deg, var(--accent-from), var(--accent-to))",
-                      boxShadow: "0 2px 8px -2px var(--accent-glow)",
-                    } : undefined}
-                  >
-                    <span>{opt.icon}</span>
-                    <span className="hidden sm:inline">{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
             {status && (
               <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-white/35 font-mono shrink-0">
-                {settings.provider === "groq"
-                  ? <span>{status.groq_model || "groq"}</span>
-                  : <span>{status.llm_model || "local"}</span>
-                }
-                {status.device && <span>· {status.device.toUpperCase()}</span>}
+                {status.llm_model && <span>{status.llm_model}</span>}
+                {status.device    && <span>· {status.device.toUpperCase()}</span>}
               </div>
             )}
 

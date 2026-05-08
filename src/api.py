@@ -26,13 +26,6 @@ import shutil
 import threading
 from typing import Optional
 
-# Carga .env automáticamente si python-dotenv está instalado
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -72,10 +65,6 @@ LM_STUDIO_BASE_URL = "http://localhost:1234/v1"
 LM_STUDIO_API_KEY = "lm-studio"
 DEFAULT_LLM_MODEL = "local-model"
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-
 MAX_CONTEXT_CHARS = 5000
 MAX_CHUNK_CHARS_PER_RESULT = 1200
 
@@ -97,21 +86,11 @@ class RAGState:
         self.metadata: list[dict] = []
         self.embedding_model: Optional[SentenceTransformer] = None
         self.device: str = "cpu"
-        # LLM local (LM Studio)
-        self.llm_client_local: Optional[OpenAI] = None
-        self.llm_model_name_local: str = DEFAULT_LLM_MODEL
-        # LLM cloud (Groq)
-        self.llm_client_groq: Optional[OpenAI] = None
-        self.llm_model_name_groq: str = GROQ_DEFAULT_MODEL
+        self.llm_client: Optional[OpenAI] = None
+        self.llm_model_name: str = DEFAULT_LLM_MODEL
         self.lock = threading.Lock()
         self.rebuilding = False
         self.last_error: Optional[str] = None
-
-    def get_client(self, provider: str) -> tuple:
-        """Returns (client, model_name) for the given provider."""
-        if provider == "groq":
-            return self.llm_client_groq, self.llm_model_name_groq
-        return self.llm_client_local, self.llm_model_name_local
 
     def load_index(self):
         if not (os.path.exists(FAISS_INDEX_FILE) and os.path.exists(METADATA_JSON_FILE)):
@@ -130,36 +109,22 @@ class RAGState:
 
     def connect_llm(self):
         try:
-            self.llm_client_local = OpenAI(
+            self.llm_client = OpenAI(
                 base_url=LM_STUDIO_BASE_URL,
                 api_key=LM_STUDIO_API_KEY,
             )
             try:
-                models = self.llm_client_local.models.list()
+                models = self.llm_client.models.list()
                 data = getattr(models, "data", None)
                 if data and len(data) > 0:
-                    self.llm_model_name_local = data[0].id
+                    self.llm_model_name = data[0].id
                 else:
-                    self.llm_model_name_local = DEFAULT_LLM_MODEL
+                    self.llm_model_name = DEFAULT_LLM_MODEL
             except Exception:
-                self.llm_model_name_local = DEFAULT_LLM_MODEL
+                self.llm_model_name = DEFAULT_LLM_MODEL
         except Exception as e:
-            self.llm_client_local = None
+            self.llm_client = None
             self.last_error = f"No se pudo conectar a LM Studio: {e}"
-
-    def connect_groq(self):
-        if not GROQ_API_KEY:
-            self.llm_client_groq = None
-            return
-        try:
-            self.llm_client_groq = OpenAI(
-                base_url=GROQ_BASE_URL,
-                api_key=GROQ_API_KEY,
-            )
-            self.llm_model_name_groq = GROQ_DEFAULT_MODEL
-        except Exception as e:
-            self.llm_client_groq = None
-            self.last_error = f"No se pudo conectar a Groq: {e}"
 
 
 state = RAGState()
@@ -192,7 +157,6 @@ def on_startup():
     except Exception as e:
         state.last_error = f"Error cargando modelo de embeddings: {e}"
     state.connect_llm()
-    state.connect_groq()
 
 
 # =========================
@@ -219,7 +183,7 @@ def _embed_query(query: str) -> np.ndarray:
     return qv.reshape(1, -1)
 
 
-def _rewrite_and_expand_query(user_query: str, history: list, provider: str = "local") -> str:
+def _rewrite_and_expand_query(user_query: str, history: list) -> str:
     """
     Optimiza la pregunta del usuario antes de la búsqueda vectorial:
       1. Query Rewriting: usa el historial para dar contexto a la pregunta actual.
@@ -228,8 +192,7 @@ def _rewrite_and_expand_query(user_query: str, history: list, provider: str = "l
     Si el LLM no está disponible o la llamada falla, devuelve la `user_query`
     original como fallback (defensivo: nunca rompe el pipeline RAG).
     """
-    client, model_name = state.get_client(provider)
-    if client is None or not user_query or not user_query.strip():
+    if state.llm_client is None or not user_query or not user_query.strip():
         return user_query
 
     system_prompt = (
@@ -264,8 +227,8 @@ def _rewrite_and_expand_query(user_query: str, history: list, provider: str = "l
     ) + f"Pregunta actual del usuario:\n{user_query}\n\nConsulta optimizada:"
 
     try:
-        response = client.chat.completions.create(
-            model=model_name,
+        response = state.llm_client.chat.completions.create(
+            model=state.llm_model_name,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -421,7 +384,6 @@ class AskRequest(BaseModel):
     temperature: float = 0.2
     history: list[ChatMessage] = []
     use_history: bool = True
-    provider: str = "local"  # "local" | "groq"
 
 
 # =========================
@@ -447,11 +409,9 @@ def api_status():
         "pdfs": pdfs,
         "embedding_model": EMBEDDING_MODEL,
         "device": state.device,
-        "llm_connected": state.llm_client_local is not None,
-        "llm_model": state.llm_model_name_local,
+        "llm_connected": state.llm_client is not None,
+        "llm_model": state.llm_model_name,
         "lm_studio_url": LM_STUDIO_BASE_URL,
-        "groq_connected": state.llm_client_groq is not None,
-        "groq_model": state.llm_model_name_groq,
         "last_error": state.last_error,
     }
 
@@ -682,32 +642,19 @@ def api_ask(req: AskRequest):
             status_code=400,
             detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'."
         )
-
-    provider = (req.provider or "local").lower()
-    llm_client, llm_model = state.get_client(provider)
-    if llm_client is None:
-        if provider == "groq":
-            state.connect_groq()
-            llm_client, llm_model = state.get_client(provider)
-            if llm_client is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Groq no disponible. Define la variable de entorno GROQ_API_KEY.",
-                )
-        else:
-            state.connect_llm()
-            llm_client, llm_model = state.get_client(provider)
-            if llm_client is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}. Levanta el servidor local.",
-                )
+    if state.llm_client is None:
+        # Intento de reconexión silencioso
+        state.connect_llm()
+        if state.llm_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}. Levanta el servidor local.",
+            )
 
     # ── Query Rewriting + Expansion (antes del retrieval) ──
     enhanced_query = _rewrite_and_expand_query(
         req.question,
         req.history if req.use_history else [],
-        provider=provider,
     )
 
     # Recuperar fragmentos con la consulta optimizada
@@ -750,8 +697,8 @@ def api_ask(req: AskRequest):
     messages.append({"role": "user", "content": user_prompt})
 
     try:
-        response = llm_client.chat.completions.create(
-            model=llm_model,
+        response = state.llm_client.chat.completions.create(
+            model=state.llm_model_name,
             temperature=float(req.temperature),
             messages=messages,
         )
@@ -762,8 +709,7 @@ def api_ask(req: AskRequest):
     return {
         "answer": answer,
         "sources": results,
-        "model": llm_model,
-        "provider": provider,
+        "model": state.llm_model_name,
         "device": state.device,
         "n_sources": len(results),
         "original_query": req.question,
@@ -786,26 +732,13 @@ def api_ask_stream(req: AskRequest):
             status_code=400,
             detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'."
         )
-
-    provider = (req.provider or "local").lower()
-    llm_client, llm_model = state.get_client(provider)
-    if llm_client is None:
-        if provider == "groq":
-            state.connect_groq()
-            llm_client, llm_model = state.get_client(provider)
-            if llm_client is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Groq no disponible. Define la variable de entorno GROQ_API_KEY.",
-                )
-        else:
-            state.connect_llm()
-            llm_client, llm_model = state.get_client(provider)
-            if llm_client is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}.",
-                )
+    if state.llm_client is None:
+        state.connect_llm()
+        if state.llm_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}."
+            )
 
     # Construir el prompt de historial aquí (fuera del generador, en hilo sync)
     system_prompt = (
@@ -849,7 +782,6 @@ def api_ask_stream(req: AskRequest):
             enhanced_query = _rewrite_and_expand_query(
                 req.question,
                 req.history if req.use_history else [],
-                provider=provider,
             )
         except Exception:
             enhanced_query = req.question
@@ -881,7 +813,7 @@ def api_ask_stream(req: AskRequest):
         context = _build_context(results)
 
         # ── 2. Llamar al LLM con streaming ──
-        yield sse({"type": "status", "msg": f"🤖 Llamando a {llm_model} [{provider}]…"})
+        yield sse({"type": "status", "msg": f"🤖 Llamando a {state.llm_model_name}…"})
 
         # Para la generación final usamos la pregunta original del usuario,
         # así la respuesta del LLM se ajusta a su intención literal y no a la
@@ -889,8 +821,8 @@ def api_ask_stream(req: AskRequest):
         messages = build_messages(context, req.question)
 
         try:
-            stream = llm_client.chat.completions.create(
-                model=llm_model,
+            stream = state.llm_client.chat.completions.create(
+                model=state.llm_model_name,
                 temperature=float(req.temperature),
                 messages=messages,
                 stream=True,
