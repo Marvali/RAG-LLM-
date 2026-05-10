@@ -28,6 +28,12 @@ import shutil
 import threading
 from typing import Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +73,10 @@ LM_STUDIO_BASE_URL = "http://localhost:1234/v1"
 LM_STUDIO_API_KEY = "lm-studio"
 DEFAULT_LLM_MODEL = "local-model"
 
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
 MAX_CONTEXT_CHARS = 5000
 MAX_CHUNK_CHARS_PER_RESULT = 1200
 
@@ -91,6 +101,8 @@ class RAGState:
         self.device: str = "cpu"
         self.llm_client: Optional[OpenAI] = None
         self.llm_model_name: str = DEFAULT_LLM_MODEL
+        self.groq_client: Optional[OpenAI] = None
+        self.groq_model_name: str = GROQ_DEFAULT_MODEL
         self.lock = threading.Lock()
         self.rebuilding = False
         self.last_error: Optional[str] = None
@@ -129,6 +141,20 @@ class RAGState:
             self.llm_client = None
             self.last_error = f"No se pudo conectar a LM Studio: {e}"
 
+    def connect_groq(self):
+        if not GROQ_API_KEY:
+            self.groq_client = None
+            return
+        try:
+            self.groq_client = OpenAI(
+                base_url=GROQ_BASE_URL,
+                api_key=GROQ_API_KEY,
+            )
+            self.groq_model_name = GROQ_DEFAULT_MODEL
+        except Exception as e:
+            self.groq_client = None
+            self.last_error = f"No se pudo conectar a Groq: {e}"
+
 
 state = RAGState()
 
@@ -160,11 +186,19 @@ def on_startup():
     except Exception as e:
         state.last_error = f"Error cargando modelo de embeddings: {e}"
     state.connect_llm()
+    state.connect_groq()
 
 
 # =========================
 # UTILIDADES INTERNAS
 # =========================
+def _get_llm(provider: str) -> tuple:
+    """Devuelve (client, model_name) según el proveedor solicitado."""
+    if provider == "groq":
+        return state.groq_client, state.groq_model_name
+    return state.llm_client, state.llm_model_name
+
+
 def _normalize(vec: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(vec)
     if n == 0:
@@ -186,7 +220,7 @@ def _embed_query(query: str) -> np.ndarray:
     return qv.reshape(1, -1)
 
 
-def _rewrite_and_expand_query(user_query: str, history: list) -> str:
+def _rewrite_and_expand_query(user_query: str, history: list, provider: str = "local") -> str:
     """
     Optimiza la pregunta del usuario antes de la búsqueda vectorial:
       1. Query Rewriting: usa el historial para dar contexto a la pregunta actual.
@@ -195,7 +229,8 @@ def _rewrite_and_expand_query(user_query: str, history: list) -> str:
     Si el LLM no está disponible o la llamada falla, devuelve la `user_query`
     original como fallback (defensivo: nunca rompe el pipeline RAG).
     """
-    if state.llm_client is None or not user_query or not user_query.strip():
+    llm_client, llm_model_name = _get_llm(provider)
+    if llm_client is None or not user_query or not user_query.strip():
         return user_query
 
     system_prompt = (
@@ -230,8 +265,8 @@ def _rewrite_and_expand_query(user_query: str, history: list) -> str:
     ) + f"Pregunta actual del usuario:\n{user_query}\n\nConsulta optimizada:"
 
     try:
-        response = state.llm_client.chat.completions.create(
-            model=state.llm_model_name,
+        response = llm_client.chat.completions.create(
+            model=llm_model_name,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -387,12 +422,14 @@ class AskRequest(BaseModel):
     temperature: float = 0.2
     history: list[ChatMessage] = []
     use_history: bool = True
+    provider: str = "local"  # "local" | "groq"
 
 
 class AgentAskRequest(BaseModel):
     question: str
     temperature: float = 0.2
     max_iterations: int = 6
+    provider: str = "local"  # "local" | "groq"
 
 
 # =========================
@@ -421,6 +458,9 @@ def api_status():
         "llm_connected": state.llm_client is not None,
         "llm_model": state.llm_model_name,
         "lm_studio_url": LM_STUDIO_BASE_URL,
+        "groq_connected": state.groq_client is not None,
+        "groq_model": state.groq_model_name,
+        "groq_key_set": bool(GROQ_API_KEY),
         "last_error": state.last_error,
     }
 
@@ -651,19 +691,26 @@ def api_ask(req: AskRequest):
             status_code=400,
             detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'."
         )
-    if state.llm_client is None:
-        # Intento de reconexión silencioso
-        state.connect_llm()
-        if state.llm_client is None:
-            raise HTTPException(
-                status_code=503,
-                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}. Levanta el servidor local.",
+    llm_client, llm_model_name = _get_llm(req.provider)
+    if llm_client is None:
+        if req.provider == "groq":
+            state.connect_groq()
+        else:
+            state.connect_llm()
+        llm_client, llm_model_name = _get_llm(req.provider)
+        if llm_client is None:
+            detail = (
+                f"Groq no disponible. Comprueba la clave API."
+                if req.provider == "groq"
+                else f"LM Studio no responde en {LM_STUDIO_BASE_URL}. Levanta el servidor local."
             )
+            raise HTTPException(status_code=503, detail=detail)
 
     # ── Query Rewriting + Expansion (antes del retrieval) ──
     enhanced_query = _rewrite_and_expand_query(
         req.question,
         req.history if req.use_history else [],
+        provider=req.provider,
     )
 
     # Recuperar fragmentos con la consulta optimizada
@@ -706,8 +753,8 @@ def api_ask(req: AskRequest):
     messages.append({"role": "user", "content": user_prompt})
 
     try:
-        response = state.llm_client.chat.completions.create(
-            model=state.llm_model_name,
+        response = llm_client.chat.completions.create(
+            model=llm_model_name,
             temperature=float(req.temperature),
             messages=messages,
         )
@@ -718,7 +765,8 @@ def api_ask(req: AskRequest):
     return {
         "answer": answer,
         "sources": results,
-        "model": state.llm_model_name,
+        "model": llm_model_name,
+        "provider": req.provider,
         "device": state.device,
         "n_sources": len(results),
         "original_query": req.question,
@@ -741,13 +789,20 @@ def api_ask_stream(req: AskRequest):
             status_code=400,
             detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'."
         )
-    if state.llm_client is None:
-        state.connect_llm()
-        if state.llm_client is None:
-            raise HTTPException(
-                status_code=503,
-                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}."
+    llm_client, llm_model_name = _get_llm(req.provider)
+    if llm_client is None:
+        if req.provider == "groq":
+            state.connect_groq()
+        else:
+            state.connect_llm()
+        llm_client, llm_model_name = _get_llm(req.provider)
+        if llm_client is None:
+            detail = (
+                "Groq no disponible. Comprueba la clave API."
+                if req.provider == "groq"
+                else f"LM Studio no responde en {LM_STUDIO_BASE_URL}."
             )
+            raise HTTPException(status_code=503, detail=detail)
 
     # Construir el prompt de historial aquí (fuera del generador, en hilo sync)
     system_prompt = (
@@ -791,6 +846,7 @@ def api_ask_stream(req: AskRequest):
             enhanced_query = _rewrite_and_expand_query(
                 req.question,
                 req.history if req.use_history else [],
+                provider=req.provider,
             )
         except Exception:
             enhanced_query = req.question
@@ -822,7 +878,8 @@ def api_ask_stream(req: AskRequest):
         context = _build_context(results)
 
         # ── 2. Llamar al LLM con streaming ──
-        yield sse({"type": "status", "msg": f"🤖 Llamando a {state.llm_model_name}…"})
+        provider_label = "Groq" if req.provider == "groq" else "Local"
+        yield sse({"type": "status", "msg": f"🤖 [{provider_label}] Llamando a {llm_model_name}…"})
 
         # Para la generación final usamos la pregunta original del usuario,
         # así la respuesta del LLM se ajusta a su intención literal y no a la
@@ -830,8 +887,8 @@ def api_ask_stream(req: AskRequest):
         messages = build_messages(context, req.question)
 
         try:
-            stream = state.llm_client.chat.completions.create(
-                model=state.llm_model_name,
+            stream = llm_client.chat.completions.create(
+                model=llm_model_name,
                 temperature=float(req.temperature),
                 messages=messages,
                 stream=True,
@@ -877,13 +934,20 @@ def api_ask_agent(req: AgentAskRequest):
             status_code=400,
             detail="El índice RAG no está disponible. Sube PDFs y pulsa 'Regenerar RAG'.",
         )
-    if state.llm_client is None:
-        state.connect_llm()
-        if state.llm_client is None:
-            raise HTTPException(
-                status_code=503,
-                detail=f"LM Studio no responde en {LM_STUDIO_BASE_URL}.",
+    llm_client, llm_model_name = _get_llm(req.provider)
+    if llm_client is None:
+        if req.provider == "groq":
+            state.connect_groq()
+        else:
+            state.connect_llm()
+        llm_client, llm_model_name = _get_llm(req.provider)
+        if llm_client is None:
+            detail = (
+                "Groq no disponible. Comprueba la clave API."
+                if req.provider == "groq"
+                else f"LM Studio no responde en {LM_STUDIO_BASE_URL}."
             )
+            raise HTTPException(status_code=503, detail=detail)
 
     # Estado compatible con las herramientas de agent_llm
     agent_state = {
@@ -900,8 +964,8 @@ def api_ask_agent(req: AgentAskRequest):
 
     for iteration in range(1, req.max_iterations + 1):
         try:
-            response = state.llm_client.chat.completions.create(
-                model=state.llm_model_name,
+            response = llm_client.chat.completions.create(
+                model=llm_model_name,
                 temperature=float(req.temperature),
                 messages=messages,
                 tools=AGENT_TOOLS,
@@ -919,7 +983,8 @@ def api_ask_agent(req: AgentAskRequest):
                 "answer": msg.content or "",
                 "tool_calls_log": tool_calls_log,
                 "iterations_used": iteration,
-                "model": state.llm_model_name,
+                "model": llm_model_name,
+                "provider": req.provider,
                 "device": state.device,
             }
 
@@ -955,7 +1020,8 @@ def api_ask_agent(req: AgentAskRequest):
         "answer": "El agente alcanzó el límite de iteraciones sin producir una respuesta.",
         "tool_calls_log": tool_calls_log,
         "iterations_used": req.max_iterations,
-        "model": state.llm_model_name,
+        "model": llm_model_name,
+        "provider": req.provider,
         "device": state.device,
     }
 

@@ -15,6 +15,7 @@ function App() {
       topK:        s.topK        ?? 5,
       useHistory:  s.useHistory  ?? true,
       theme:       s.theme       ?? "red",
+      provider:    s.provider    ?? "local",
     };
   });
   const [settingsOpen, setSettingsOpen] = _useStateApp(false);
@@ -194,6 +195,7 @@ function App() {
       temperature: settings.temperature,
       use_history: settings.useHistory,
       history: historyMsgs.filter(m => m.role === "user" || m.role === "assistant"),
+      provider:    settings.provider ?? "local",
     };
     if (currentChat.summary) payload.context_summary = currentChat.summary;
 
@@ -275,6 +277,7 @@ function App() {
         question:       q,
         temperature:    settings.temperature,
         max_iterations: 6,
+        provider:       settings.provider ?? "local",
       });
 
       // Construir log desde tool_calls_log
@@ -690,8 +693,20 @@ function App() {
 
             {status && (
               <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-white/35 font-mono shrink-0">
-                {status.llm_model && <span>{status.llm_model}</span>}
-                {status.device    && <span>· {status.device.toUpperCase()}</span>}
+                <span
+                  className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
+                  style={{
+                    background: settings.provider === "groq" ? "rgba(250,204,21,0.15)" : "rgba(255,255,255,0.07)",
+                    color:      settings.provider === "groq" ? "#fbbf24"               : "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  {settings.provider === "groq" ? "⚡ Groq" : "💻 Local"}
+                </span>
+                {settings.provider === "groq"
+                  ? <span>{status.groq_model || "—"}</span>
+                  : <span>{status.llm_model  || "—"}</span>
+                }
+                {status.device && <span>· {status.device.toUpperCase()}</span>}
               </div>
             )}
 

@@ -20,6 +20,7 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
   const [topK,     setTopK]     = _useStateS(settings.topK ?? 5);
   const [useHist,  setUseHist]  = _useStateS(settings.useHistory ?? true);
   const [theme,    setTheme]    = _useStateS(settings.theme ?? "red");
+  const [provider, setProvider] = _useStateS(settings.provider ?? "local");
 
   /* Sync cuando se abre */
   _useEffectS(() => {
@@ -28,6 +29,7 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
       setTopK(settings.topK ?? 5);
       setUseHist(settings.useHistory ?? true);
       setTheme(settings.theme ?? "red");
+      setProvider(settings.provider ?? "local");
     }
   }, [open]);
 
@@ -42,7 +44,7 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
   if (!open) return null;
 
   function handleSave() {
-    onSave({ temperature: temp, topK, useHistory: useHist, theme });
+    onSave({ temperature: temp, topK, useHistory: useHist, theme, provider });
     onClose();
   }
 
@@ -146,6 +148,51 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
             </div>
           </div>
 
+          {/* Selector de proveedor LLM */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="text-white/50" style={{width:15,height:15}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+              <span className="text-[13px] font-medium text-white/85">Proveedor LLM</span>
+            </div>
+            <div className="flex gap-2">
+              {[
+                { id: "local", label: "Local", sublabel: "LM Studio", icon: "💻" },
+                { id: "groq",  label: "Groq",  sublabel: status?.groq_model || "Cloud", icon: "⚡" },
+              ].map((p) => {
+                const active = provider === p.id;
+                const groqOk = p.id === "groq" && status?.groq_connected;
+                const localOk = p.id === "local" && status?.llm_connected;
+                const connected = p.id === "groq" ? groqOk : localOk;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setProvider(p.id)}
+                    className="flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border transition"
+                    style={{
+                      borderColor: active ? "var(--accent-from)" : "rgba(255,255,255,0.1)",
+                      background:  active ? "var(--accent-bg20)" : "rgba(255,255,255,0.03)",
+                      boxShadow:   active ? "0 0 0 1px var(--accent-from)" : "none",
+                    }}
+                  >
+                    <span className="text-xl">{p.icon}</span>
+                    <span className="text-[12px] font-semibold" style={{ color: active ? "var(--accent-text)" : "rgba(255,255,255,0.7)" }}>
+                      {p.label}
+                    </span>
+                    <span className="text-[10px] text-white/35 truncate max-w-full px-1">{p.sublabel}</span>
+                    <span className={cls(
+                      "text-[9px] font-medium px-1.5 py-0.5 rounded-full mt-0.5",
+                      connected ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-white/30"
+                    )}>
+                      {connected ? "conectado" : "no disponible"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Selector de tema */}
           <div>
             <div className="flex items-center gap-2 mb-3">
@@ -186,8 +233,18 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
           {status && (
             <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5 font-mono text-[11.5px]">
               <div>
-                <span className="text-white/35">LLM: </span>
-                <span className="text-white/70">{status.llm_model || "—"}</span>
+                <span className="text-white/35">local: </span>
+                <span className={status.llm_connected ? "text-emerald-300/80" : "text-red-300/60"}>
+                  {status.llm_connected ? "●" : "○"}
+                </span>
+                <span className="text-white/70 ml-1">{status.llm_model || "—"}</span>
+              </div>
+              <div>
+                <span className="text-white/35">groq: </span>
+                <span className={status.groq_connected ? "text-emerald-300/80" : "text-red-300/60"}>
+                  {status.groq_connected ? "●" : "○"}
+                </span>
+                <span className="text-white/70 ml-1">{status.groq_model || "—"}</span>
               </div>
               <div>
                 <span className="text-white/35">embedding: </span>
@@ -196,10 +253,6 @@ function SettingsModal({ open, onClose, settings, onSave, status }) {
               <div>
                 <span className="text-white/35">device: </span>
                 <span className="text-white/70">{(status.device || "—").toUpperCase()}</span>
-              </div>
-              <div className="break-all">
-                <span className="text-white/35">lm_studio: </span>
-                <span className="text-white/70">{status.lm_studio_url || "—"}</span>
               </div>
               {status.last_error && (
                 <div className="text-red-300/80 break-words">

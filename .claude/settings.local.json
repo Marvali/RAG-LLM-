@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($basePath = \"C:\\\\Users\\\\isaac\\\\Documents\\\\GitHub\\\\RAG-LLM-\\\\.claude\\\\worktrees\\\\practical-goldberg-1d43e4\"; Get-ChildItem -Path $basePath -Recurse -Force | Select-Object -ExpandProperty FullName | ForEach-Object { $_ -replace [regex]::Escape\\($basePath + '\\\\'\\), '' } | Sort-Object)"
+    ]
+  }
+}
